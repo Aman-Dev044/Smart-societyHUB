@@ -587,6 +587,31 @@ export const submitComplaintService = async(payload: any): Promise<any>=>{
   return response.data;
 };
 
+// [POINT 3] Guard gate par surprise visitor / technician capture karta hai (photo ke saath)
+export const gateEntryService = async (formData: FormData): Promise<any> => {
+  const response = await axiosInstance.post(AUTHROUTES.VISITOR_GATE_ENTRY, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return response.data;
+};
+
+// [POINT 3] Resident gate request ko approve / reject karta hai
+export const respondToGateRequestService = async (payload: {
+  visitorId: string;
+  action: "approve" | "reject";
+  allowedDurationMins?: number;
+  rejectionReason?: string;
+}): Promise<any> => {
+  const response = await axiosInstance.post(AUTHROUTES.VISITOR_RESPOND, payload);
+  return response.data;
+};
+
+// [POINT 3] Resident ke pending approval cards
+export const getPendingApprovalsService = async (): Promise<any> => {
+  const response = await axiosInstance.get(AUTHROUTES.VISITOR_PENDING_APPROVALS);
+  return response.data;
+};
+
 // DOCUMENT SERVICES
 export const uploadDocumentService = async (formData: FormData): Promise<any> => {
   const response = await axiosInstance.post(AUTHROUTES.ADMIN_CREATE_DOCUMENT, formData, {

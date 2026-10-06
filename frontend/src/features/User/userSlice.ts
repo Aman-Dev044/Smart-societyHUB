@@ -15,6 +15,8 @@ import {
   userSubmitPaymentService,
   createVisitorService,
   getVisitorHistoryService,
+  getPendingApprovalsService,
+  respondToGateRequestService,
   addStaffRatingService,
   getStaffReviewsService,
   getStaffDirectoryService,
@@ -45,6 +47,11 @@ interface UserState {
   visitorLoading: boolean;
   createVisitorSuccess: boolean;
   generatedCode: string | null;
+  // [POINT 3] Guard ke bheje hue gate requests jinka resident ko jawab dena hai
+  pendingApprovals: any[];
+  pendingApprovalsLoading: boolean;
+  respondingTo: string | null;
+  defaultDurationMins: number;
   // [MODULE-D]: Rating State
   staffReviews: any[];
   ratingLoading: boolean;
@@ -75,6 +82,11 @@ const initialState: UserState = {
   visitorLoading: false,
   createVisitorSuccess: false,
   generatedCode: null,
+  // [POINT 3] Initial State
+  pendingApprovals: [],
+  pendingApprovalsLoading: false,
+  respondingTo: null,
+  defaultDurationMins: 120,
   // [MODULE-D]: Rating Initial State
   staffReviews: [],
   ratingLoading: false,
@@ -325,6 +337,39 @@ export const getVisitorHistory = createAsyncThunk<any, string, { rejectValue: st
     } catch (error: any) {
       return rejectWithValue(
         error.response?.data?.message || "Failed to fetch visitor history"
+      );
+    }
+  }
+);
+
+// [POINT 3] RESIDENT KE PENDING GATE APPROVALS
+export const getPendingApprovals = createAsyncThunk<any, void, { rejectValue: string }>(
+  "user/getPendingApprovals",
+  async (_, { rejectWithValue }) => {
+    try {
+      return await getPendingApprovalsService();
+    } catch (error: any) {
+      return rejectWithValue(
+        error.response?.data?.message || "Failed to fetch pending approvals"
+      );
+    }
+  }
+);
+
+// [POINT 3] RESIDENT APPROVE / REJECT GATE REQUEST
+export const respondToGateRequest = createAsyncThunk<
+  any,
+  { visitorId: string; action: "approve" | "reject"; allowedDurationMins?: number; rejectionReason?: string },
+  { rejectValue: string }
+>(
+  "user/respondToGateRequest",
+  async (payload, { rejectWithValue }) => {
+    try {
+      const response = await respondToGateRequestService(payload);
+      return { ...response, visitorId: payload.visitorId };
+    } catch (error: any) {
+      return rejectWithValue(
+        error.response?.data?.message || "Failed to respond to gate request"
       );
     }
   }
@@ -621,6 +666,39 @@ const userSlice = createSlice({
         })
         .addCase(getVisitorHistory.rejected, (state, action) => {
             state.visitorLoading = false;
+            state.error = action.payload as string;
+        })
+
+        // [POINT 3] PENDING GATE APPROVALS
+        .addCase(getPendingApprovals.pending, (state) => {
+            state.pendingApprovalsLoading = true;
+        })
+        .addCase(getPendingApprovals.fulfilled, (state, action) => {
+            state.pendingApprovalsLoading = false;
+            state.pendingApprovals = action.payload?.data || [];
+            if (action.payload?.defaultDurationMins) {
+                state.defaultDurationMins = action.payload.defaultDurationMins;
+            }
+        })
+        .addCase(getPendingApprovals.rejected, (state, action) => {
+            state.pendingApprovalsLoading = false;
+            state.error = action.payload as string;
+        })
+
+        // [POINT 3] RESPOND TO GATE REQUEST
+        .addCase(respondToGateRequest.pending, (state, action) => {
+            state.respondingTo = action.meta.arg.visitorId;
+            state.error = null;
+        })
+        .addCase(respondToGateRequest.fulfilled, (state, action) => {
+            state.respondingTo = null;
+            // Jawab de diya, card list se hata do
+            state.pendingApprovals = state.pendingApprovals.filter(
+                (v: any) => v._id !== action.payload.visitorId
+            );
+        })
+        .addCase(respondToGateRequest.rejected, (state, action) => {
+            state.respondingTo = null;
             state.error = action.payload as string;
         })
 

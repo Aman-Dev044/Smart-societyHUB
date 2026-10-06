@@ -4,7 +4,7 @@ import {
   ShieldAlert, CheckCircle2, XCircle, MoreVertical,
   Filter, Calendar, UserPlus, ArrowRightLeft, UserX,
   UserCheck, ShieldCheck, LogIn, LogOut, Ban, Info, Loader2,
-  ChevronDown, Check, X, Truck, History
+  ChevronDown, Check, X, Truck, History, Camera, Timer
 } from 'lucide-react';
 import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import { useAppDispatch, useAppSelector } from "../../store/store";
@@ -27,7 +27,8 @@ import {
  approveVisitor,
  rejectVisitor,
  markVisitorExit,
- verifyStaff 
+ verifyStaff,
+ gateEntry
 } from "../../features/admin/adminSlice";
 import { toast } from "sonner";
 
@@ -116,6 +117,18 @@ const DailyStaff = () => {
     photo: null
   });
 
+  // [POINT 3] Gate entry (surprise visitor / technician) modal
+  const [showGateModal, setShowGateModal] = useState(false);
+  const [gateVisitor, setGateVisitor] = useState<any>({
+    visitorName: "",
+    visitorPhone: "",
+    vehicleNumber: "",
+    purpose: "",
+    flatNumber: "",
+    photo: null,
+  });
+  const [gateSubmitting, setGateSubmitting] = useState(false);
+
   const [newDelivery, setNewDelivery] = useState({
     deliveryBoyName: "",
     companyName: "",
@@ -123,6 +136,35 @@ const DailyStaff = () => {
     flatNumber: "",
     vehicleNumber: ""
   });
+
+  // [POINT 3] Guard gate par visitor capture karke resident ko request bhejta hai
+  const handleGateEntry = () => {
+    const { visitorName, visitorPhone, flatNumber, purpose } = gateVisitor;
+    if (!visitorName || !visitorPhone || !flatNumber || !purpose) {
+      return toast.error("Name, Phone, Flat Number aur Purpose zaroori hain");
+    }
+
+    const fd = new FormData();
+    fd.append("visitorName", visitorName);
+    fd.append("visitorPhone", visitorPhone);
+    fd.append("flatNumber", flatNumber);
+    fd.append("purpose", purpose);
+    if (gateVisitor.vehicleNumber) fd.append("vehicleNumber", gateVisitor.vehicleNumber);
+    if (gateVisitor.photo) fd.append("photo", gateVisitor.photo);
+
+    setGateSubmitting(true);
+    dispatch(gateEntry(fd)).then((res: any) => {
+      setGateSubmitting(false);
+      if (res.meta.requestStatus === "fulfilled") {
+        toast.success(res.payload?.message || "Request resident ko bhej di gayi");
+        setShowGateModal(false);
+        setGateVisitor({ visitorName: "", visitorPhone: "", vehicleNumber: "", purpose: "", flatNumber: "", photo: null });
+        dispatch(getVisitorHistory('All'));
+      } else {
+        toast.error(res.payload || "Gate entry failed");
+      }
+    });
+  };
 
   const roleOptions = ["Maid", "Cook", "Driver", "Security", "Plumber", "Electrician"];
   const deliveryCompanies = ["Amazon", "Flipkart", "Zomato", "Swiggy", "Blinkit", "BigBasket", "Other"];
@@ -137,6 +179,14 @@ const DailyStaff = () => {
       dispatch(getVisitorHistory('All'));
     }
   }, [dispatch, mainTab, staffTypeFilter]);
+
+  // [POINT 3] Visitor tab par polling - resident approve kare to guard ki
+  // screen 10 second me apne aap update ho jaye.
+  useEffect(() => {
+    if (mainTab !== 'visitor') return;
+    const id = setInterval(() => dispatch(getVisitorHistory('All')), 10000);
+    return () => clearInterval(id);
+  }, [mainTab, dispatch]);
 
   // 2. Lazy Load Blocked List
   useEffect(() => {
@@ -954,6 +1004,14 @@ const DailyStaff = () => {
                     </button>
                   ))}
                 </div>
+
+                {/* [POINT 3] Guard: bina bataye aaye visitor / technician */}
+                <button
+                  onClick={() => setShowGateModal(true)}
+                  className={`flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-xl font-bold text-xs transition-all shadow-md active:scale-95 mr-1 ${!isGuard && !isAdmin ? 'hidden' : ''}`}
+                >
+                  <Camera size={14} strokeWidth={3} /> Gate Entry
+                </button>
               </div>
 
               <div className="p-6">
@@ -976,11 +1034,23 @@ const DailyStaff = () => {
                         ? (visitorData || []).filter((v: any) => v.status?.toLowerCase() === 'approved' && !v.exitTime)
                         : (visitorData || [])
                       ).map((v: any) => (
-                        <tr key={v._id} className="hover:bg-muted/50/50 transition-colors">
+                        <tr key={v._id} className={`transition-colors ${v.isOverstay ? 'bg-destructive/5 hover:bg-destructive/10' : 'hover:bg-muted/50'}`}>
                           <td className="py-4 px-4">
-                            <div className="flex flex-col">
-                              <span className="text-sm font-bold text-slate-700">{v.visitorName}</span>
-                              <span className="text-[10px] text-muted-foreground">Mob: {v.visitorPhone}</span>
+                            <div className="flex items-center gap-3">
+                              {/* [POINT 3] Gate par liya hua photo */}
+                              {v.photo ? (
+                                <img src={v.photo} alt="" className="w-9 h-9 rounded-lg object-cover border border-border shrink-0" />
+                              ) : (
+                                <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs uppercase border border-border shrink-0">
+                                  {v.visitorName?.charAt(0)}
+                                </div>
+                              )}
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-sm font-bold text-foreground truncate">{v.visitorName}</span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  Mob: {v.visitorPhone}{v.vehicleNumber ? ' / ' + v.vehicleNumber : ''}
+                                </span>
+                              </div>
                             </div>
                           </td>
                           <td className="py-4 px-4">
@@ -990,7 +1060,12 @@ const DailyStaff = () => {
                             <span className="text-xs font-bold text-slate-600">{v.flatNumber}</span>
                           </td>
                           <td className="py-4 px-4 text-center">
-                            {v.status?.toLowerCase() === 'pending' ? (
+                            {v.requestType === 'gate_request' ? (
+                              /* [POINT 3] Gate request me code nahi hota - resident app se approve karta hai */
+                              <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">
+                                Resident Approval
+                              </span>
+                            ) : v.status?.toLowerCase() === 'pending' ? (
                                <span className="bg-muted/50 text-muted-foreground px-3 py-1 rounded-lg font-black text-sm tracking-widest border border-border shadow-sm">
                                  {v.verificationCode || '####'}
                                </span>
@@ -999,14 +1074,34 @@ const DailyStaff = () => {
                             )}
                           </td>
                           <td className="py-4 px-4">
-                            <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${
-                              v.status?.toLowerCase() === 'pending' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
-                            }`}>
-                              {v.status}
-                            </span>
+                            {v.isOverstay ? (
+                              /* [POINT 3] Resident ke diye duration se zyada ruk gaya */
+                              <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-lg bg-destructive/10 text-destructive inline-flex items-center gap-1.5"
+                                    title={`Allowed ${v.allowedDurationMins} min`}>
+                                <ShieldAlert size={11} strokeWidth={3} /> Overstay +{v.minsOverstayed}m
+                              </span>
+                            ) : (
+                              <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${
+                                v.status?.toLowerCase() === 'pending' ? 'bg-amber-50 text-amber-600'
+                                : v.status?.toLowerCase() === 'rejected' ? 'bg-destructive/10 text-destructive'
+                                : 'bg-emerald-50 text-emerald-600'
+                              }`}>
+                                {v.status === 'Pending' && v.requestType === 'gate_request' ? 'Waiting' : v.status}
+                              </span>
+                            )}
+                            {v.status === 'Approved' && v.allowedDurationMins && !v.exitTime && (
+                              <span className="block text-[9px] font-bold text-muted-foreground mt-1">
+                                Allowed {v.allowedDurationMins} min
+                              </span>
+                            )}
                           </td>
                           <td className="py-4 px-4 text-right">
-                            {v.status?.toLowerCase() === 'pending' ? (
+                            {v.status?.toLowerCase() === 'pending' && v.requestType === 'gate_request' ? (
+                              /* [POINT 3] Resident ke jawab ka intezaar - guard yahan kuch nahi kar sakta */
+                              <span className="text-[10px] font-bold text-amber-600 uppercase inline-flex items-center gap-1.5">
+                                <Timer size={12} strokeWidth={3} /> Waiting for resident
+                              </span>
+                            ) : v.status?.toLowerCase() === 'pending' ? (
                               <div className="flex justify-end gap-2">
                                 <button 
                                   onClick={() => setShowVerifyModal(v)}
@@ -1042,6 +1137,97 @@ const DailyStaff = () => {
           </>
         )}
       </div>
+
+      {/* [POINT 3] Gate Entry Modal - surprise visitor / technician */}
+      {showGateModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowGateModal(false)} />
+          <div className="relative bg-card rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center border border-border">
+                  <Camera size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-foreground leading-none">Gate Entry</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Resident ko approval request jayegi</p>
+                </div>
+              </div>
+              <button onClick={() => setShowGateModal(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-3.5 max-h-[60vh] overflow-y-auto">
+              <div>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Photo</label>
+                <div className="mt-1.5 flex items-center gap-3">
+                  {gateVisitor.photo ? (
+                    <img src={URL.createObjectURL(gateVisitor.photo)} alt="" className="w-14 h-14 rounded-xl object-cover border border-border" />
+                  ) : (
+                    <div className="w-14 h-14 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground">
+                      <Camera size={18} />
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => setGateVisitor({ ...gateVisitor, photo: e.target.files?.[0] || null })}
+                    className="text-xs text-muted-foreground file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border file:border-border file:text-xs file:font-bold file:bg-muted file:text-foreground"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Visitor Name *</label>
+                <input className={inputCls + " mt-1.5"} value={gateVisitor.visitorName}
+                  onChange={(e) => setGateVisitor({ ...gateVisitor, visitorName: e.target.value })}
+                  placeholder="Ramesh Kumar" />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Mobile Number *</label>
+                <input className={inputCls + " mt-1.5"} value={gateVisitor.visitorPhone}
+                  onChange={(e) => setGateVisitor({ ...gateVisitor, visitorPhone: e.target.value })}
+                  placeholder="9876543210" />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Purpose *</label>
+                <input className={inputCls + " mt-1.5"} value={gateVisitor.purpose}
+                  onChange={(e) => setGateVisitor({ ...gateVisitor, purpose: e.target.value })}
+                  placeholder="Plumbing / Electrician / Guest" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Flat Number *</label>
+                  <input className={inputCls + " mt-1.5"} value={gateVisitor.flatNumber}
+                    onChange={(e) => setGateVisitor({ ...gateVisitor, flatNumber: e.target.value })}
+                    placeholder="A-402" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Vehicle</label>
+                  <input className={inputCls + " mt-1.5"} value={gateVisitor.vehicleNumber}
+                    onChange={(e) => setGateVisitor({ ...gateVisitor, vehicleNumber: e.target.value })}
+                    placeholder="DL-01-AB-1234" />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-border">
+              <button
+                onClick={handleGateEntry}
+                disabled={gateSubmitting}
+                className="w-full bg-primary hover:bg-primary/90 disabled:opacity-60 text-primary-foreground py-3 rounded-xl font-bold text-sm transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                {gateSubmitting ? <><Loader2 size={16} className="animate-spin" /> Sending...</> : <>Send Request to Resident</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* One-time Staff Entry Modal */}
       {showOneTimeModal && (

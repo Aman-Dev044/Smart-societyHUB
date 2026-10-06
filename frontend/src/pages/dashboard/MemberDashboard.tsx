@@ -3,12 +3,12 @@ import { motion } from "framer-motion";
 import { 
   CreditCard, Bell, MessageSquare, Upload, 
   CheckCircle, Clock, UserPlus, ShieldCheck, 
-  XCircle, Loader2, Phone, MapPin, Info, Users 
+  XCircle, Loader2, Phone, MapPin, Info, Users, Car, Timer, ShieldAlert 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useAppDispatch, useAppSelector } from "../../store/store";
-import { createVisitor, getVisitorHistory, clearUserError, getMyProfile, getDashboardSummary } from "../../features/User/userSlice";
+import { createVisitor, getVisitorHistory, clearUserError, getMyProfile, getDashboardSummary, getPendingApprovals, respondToGateRequest } from "../../features/User/userSlice";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
@@ -55,10 +55,43 @@ export default function MemberDashboard() {
     flatNumber: "",
   });
 
+  // [POINT 3] Guard ke bheje hue gate requests
+  const { pendingApprovals, respondingTo, defaultDurationMins } = useAppSelector(
+    (state) => state.user
+  );
+  // Har card ka apna duration selection (default = backend ka standard time)
+  const [durationFor, setDurationFor] = useState<Record<string, number>>({});
+
+  const DURATION_OPTIONS = [30, 60, 120, 240];
+
+  const handleGateResponse = (visitorId: string, action: "approve" | "reject") => {
+    dispatch(
+      respondToGateRequest({
+        visitorId,
+        action,
+        allowedDurationMins: durationFor[visitorId] || defaultDurationMins,
+      })
+    ).then((res: any) => {
+      if (res.meta.requestStatus === "fulfilled") {
+        toast.success(res.payload?.message || "Response bhej diya gaya");
+      } else {
+        toast.error(res.payload || "Response fail ho gaya");
+      }
+    });
+  };
+
   // 1. Fetch Profile and Dashboard Summary
   useEffect(() => {
     dispatch(getMyProfile());
     dispatch(getDashboardSummary());
+  }, [dispatch]);
+
+  // [POINT 3] Pending gate requests - har 10 second par check, taaki guard ki
+  // request turant card ban kar dikhe.
+  useEffect(() => {
+    dispatch(getPendingApprovals());
+    const id = setInterval(() => dispatch(getPendingApprovals()), 10000);
+    return () => clearInterval(id);
   }, [dispatch]);
 
   useEffect(() => {
@@ -130,6 +163,105 @@ export default function MemberDashboard() {
             </Button>
           </div>
         </div>
+
+        {/* [POINT 3] Guard ki bheji hui entry requests - approve / reject */}
+        {pendingApprovals && pendingApprovals.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-destructive/5 border border-destructive/20 rounded-2xl p-5 space-y-4"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-destructive" />
+              </div>
+              <h3 className="text-sm font-black text-destructive uppercase tracking-wide flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4" />
+                Entry Request from Guard ({pendingApprovals.length})
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {pendingApprovals.map((v: any) => {
+                const busy = respondingTo === v._id;
+                const mins = durationFor[v._id] || defaultDurationMins;
+                return (
+                  <div key={v._id} className="bg-card border border-destructive/20 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      {v.photo ? (
+                        <img src={v.photo} alt="" className="w-16 h-16 rounded-xl object-cover border border-border shrink-0" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground font-bold text-lg shrink-0">
+                          {v.visitorName?.charAt(0)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-foreground truncate">{v.visitorName}</p>
+                        <p className="text-xs font-semibold text-primary uppercase tracking-wide">{v.purpose}</p>
+                        <div className="mt-1.5 space-y-0.5">
+                          <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                            <Phone className="w-3 h-3" /> {v.visitorPhone}
+                          </p>
+                          {v.vehicleNumber && (
+                            <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                              <Car className="w-3 h-3" /> {v.vehicleNumber}
+                            </p>
+                          )}
+                          {v.createdByGuard?.name && (
+                            <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                              <ShieldCheck className="w-3 h-3" /> Guard: {v.createdByGuard.name}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Kitni der ke liye access dena hai */}
+                    <div>
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                        <Timer className="w-3 h-3" /> Allow for
+                      </p>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {DURATION_OPTIONS.map((opt) => (
+                          <button
+                            key={opt}
+                            onClick={() => setDurationFor((d) => ({ ...d, [v._id]: opt }))}
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
+                              mins === opt
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-muted text-muted-foreground border-border hover:text-foreground"
+                            }`}
+                          >
+                            {opt < 60 ? `${opt} min` : `${opt / 60} hr`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        onClick={() => handleGateResponse(v._id, "approve")}
+                        disabled={busy}
+                        className="flex-1 rounded-xl h-10 font-bold"
+                      >
+                        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CheckCircle className="w-4 h-4 mr-1.5" /> Approve</>}
+                      </Button>
+                      <Button
+                        onClick={() => handleGateResponse(v._id, "reject")}
+                        disabled={busy}
+                        variant="outline"
+                        className="rounded-xl h-10 font-bold text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <XCircle className="w-4 h-4 mr-1.5" /> Reject
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
 
         {/* Quick Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">

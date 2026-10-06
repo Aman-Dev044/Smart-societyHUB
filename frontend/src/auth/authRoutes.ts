@@ -108,6 +108,10 @@ export const AUTHROUTES = {
     VISITOR_REJECT: "/visitors/reject",
     VISITOR_EXIT: "/visitors/exit",
     VISITOR_HISTORY: "/visitors/history",
+    // [POINT 3] Surprise visitor / technician gate flow
+    VISITOR_GATE_ENTRY: "/visitors/gate-entry",
+    VISITOR_RESPOND: "/visitors/respond",
+    VISITOR_PENDING_APPROVALS: "/visitors/pending-approvals",
 
     // DOCUMENT ROUTES
     ADMIN_GET_DOCUMENTS: "/documents",

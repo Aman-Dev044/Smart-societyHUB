@@ -45,6 +45,7 @@ import {
   markDeliveryExitService,
   getDeliveryLogsService,
   createVisitorService,
+  gateEntryService,
   approveVisitorService,
   rejectVisitorService,
   markVisitorExitService,
@@ -304,6 +305,18 @@ export const approveVisitor = createAsyncThunk(
       return await approveVisitorService({ visitorId, codeEnteredByGuard });
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || "Approval failed");
+    }
+  }
+);
+
+// [POINT 3] Guard gate par surprise visitor / technician capture karta hai
+export const gateEntry = createAsyncThunk(
+  "admin/gateEntry",
+  async (formData: FormData, { rejectWithValue }) => {
+    try {
+      return await gateEntryService(formData);
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || "Gate entry failed");
     }
   }
 );

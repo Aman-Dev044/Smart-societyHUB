@@ -132,6 +132,13 @@ export const uploadStaffDocuments = multer({
   { name: "policeVerification", maxCount: 1 },
 ]);
 
+// Gate-captured visitor photo (surprise visitor / technician) — single image
+export const uploadVisitorPhoto = multer({
+  storage: createStorage("visitors"),
+  fileFilter: imageFilter,
+  limits: { fileSize: 5 * MB },
+}).single("photo");
+
 // Society Documents (Bylaws, Forms, Reports)
 export const uploadSocietyDocument = multer({
   storage: createStorage("documents"),

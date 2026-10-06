@@ -4,6 +4,13 @@ import User from "../models/user.js";
 import Notification from "../models/Notification.js";
 import { createNotification } from "./notificationController.js"; 
 import { logActivity } from "../utils/logActivity.js"; 
+import { attachBaseUrl, attachBaseUrlToArray } from "../utils/addBaseUrl.js";
+import {
+  DEFAULT_VISIT_DURATION_MINS,
+  MAX_VISIT_DURATION_MINS,
+  isVisitorOverstay,
+  minsOverstayed,
+} from "../config/staffOverstay.js";
 
 // ==============================
 // CREATE VISITOR
@@ -375,15 +382,25 @@ export const visitorHistory = async (req, res) => {
       projection = { verificationCode: 0 };
     }
 
-    const visitors = await Visitor.find(query, projection).sort({
-      createdAt: -1,
-    });
+    const visitors = await Visitor.find(query, projection)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Guard ki list me cron ka wait kiye bina overstay dikhe, isliye yahin
+    // calculate karke bhejte hain (wahi helpers jo cron use karta hai).
+    const now = new Date();
+    const enriched = visitors.map((v) => ({
+      ...v,
+      isOverstay: isVisitorOverstay(v, now),
+      minsOverstayed: minsOverstayed(v, now),
+    }));
 
     return res.status(200).json({
       success: true,
       message: "Visitor history fetched successfully",
-      totalVisitors: visitors.length,
-      data: visitors,
+      totalVisitors: enriched.length,
+      defaultDurationMins: DEFAULT_VISIT_DURATION_MINS,
+      data: attachBaseUrlToArray(req, enriched, ["photo"]),
     });
   } catch (error) {
     console.error("Visitor History Error:", error);
@@ -391,6 +408,270 @@ export const visitorHistory = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Something went wrong while fetching visitor history",
+      error: error.message,
+    });
+  }
+};
+
+
+// ==============================
+// [POINT 3] GATE ENTRY - Guard surprise visitor / technician capture karta hai
+// ==============================
+export const gateEntry = async (req, res) => {
+  try {
+    const { visitorName, visitorPhone, vehicleNumber, purpose, flatNumber } =
+      req.body;
+
+    if (!visitorName || !visitorPhone || !flatNumber || !purpose) {
+      return res.status(400).json({
+        success: false,
+        message: "Visitor Name, Phone, Flat Number aur Purpose zaroori hain",
+      });
+    }
+
+    // Us flat ke sab active residents dhoondho - notification sabko jayegi.
+    const residents = await User.find({
+      society: req.user.society,
+      "unit.flatNumber": flatNumber,
+      role: "user",
+      isActive: true,
+    }).select("_id name");
+
+    if (residents.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Flat " + flatNumber + " ka koi active resident nahi mila",
+      });
+    }
+
+    const photoUrl = req.file ? "/uploads/visitors/" + req.file.filename : "";
+
+    const now = new Date();
+    const visitor = await Visitor.create({
+      society: req.user.society,
+      requestType: "gate_request",
+      visitorName,
+      visitorPhone,
+      vehicleNumber: vehicleNumber || "",
+      purpose,
+      flatNumber,
+      photo: photoUrl,
+      memberId: residents[0]._id,
+      createdByGuard: req.user.id,
+      status: "Pending",
+      visitDate: now.toISOString().split("T")[0],
+      visitTime: now.toTimeString().slice(0, 5),
+    });
+
+    // Resident ko ping - card ka poora data /visitors/pending-approvals se aata hai
+    const vehicleLine = vehicleNumber ? " Vehicle: " + vehicleNumber + "." : "";
+    for (const resident of residents) {
+      await createNotification({
+        recipient: resident._id,
+        society: req.user.society,
+        title: "Entry Request from Guard",
+        message:
+          visitorName + " (" + purpose + ") aapke flat " + flatNumber +
+          " ke liye gate par hai." + vehicleLine +
+          " Approve karne ke liye tap karein.",
+        category: "visitor",
+        type: "warning",
+        link: "/member",
+      }).catch((err) =>
+        console.error("Gate entry notification error:", err.message),
+      );
+    }
+
+    logActivity({
+      userId: req.user.id,
+      societyId: req.user.society,
+      action: "visitor_entry",
+      description:
+        "Gate entry request raised for " + visitorName + " (" + purpose +
+        ") at flat " + flatNumber + ".",
+      meta: { visitorId: visitor._id, flatNumber, vehicleNumber },
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Entry request resident ko bhej di gayi. Approval ka wait karein.",
+      data: attachBaseUrl(req, visitor, ["photo"]),
+    });
+  } catch (error) {
+    console.error("Gate Entry Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while creating gate entry",
+      error: error.message,
+    });
+  }
+};
+
+// ==============================
+// [POINT 3] Resident gate request ko approve / reject karta hai
+// ==============================
+export const respondToGateRequest = async (req, res) => {
+  try {
+    const { visitorId, action, allowedDurationMins, rejectionReason } = req.body;
+
+    if (!visitorId || !["approve", "reject"].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: 'visitorId aur action ("approve" | "reject") zaroori hain',
+      });
+    }
+
+    const visitor = await Visitor.findOne({
+      _id: visitorId,
+      society: req.user.society,
+      requestType: "gate_request",
+    });
+
+    if (!visitor) {
+      return res.status(404).json({
+        success: false,
+        message: "Gate request nahi mili",
+      });
+    }
+
+    // SECURE: sirf usi flat ka resident respond kar sakta hai (admin exempt)
+    if (req.user.role === "user") {
+      const me = await User.findById(req.user.id).select("unit.flatNumber");
+      if (!me || !me.unit || me.unit.flatNumber !== visitor.flatNumber) {
+        return res.status(403).json({
+          success: false,
+          message: "Ye request aapke flat ki nahi hai",
+        });
+      }
+    }
+
+    if (visitor.status !== "Pending") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Is request par pehle hi response ja chuka hai (" + visitor.status + ")",
+      });
+    }
+
+    const now = new Date();
+    visitor.respondedBy = req.user.id;
+    visitor.respondedAt = now;
+
+    if (action === "reject") {
+      visitor.status = "Rejected";
+      visitor.rejectionReason = rejectionReason || "";
+    } else {
+      // Resident jitni der allow kare; na bhejne par standard time.
+      let mins = Number(allowedDurationMins) || DEFAULT_VISIT_DURATION_MINS;
+      mins = Math.min(Math.max(Math.round(mins), 1), MAX_VISIT_DURATION_MINS);
+
+      visitor.status = "Approved";
+      visitor.allowedDurationMins = mins;
+      visitor.entryTime = now;
+    }
+
+    await visitor.save();
+
+    // Guards ko turant batao - unki screen poll par refresh hoti hai
+    const guards = await User.find({
+      society: req.user.society,
+      role: { $regex: /^guard$/i },
+      isActive: true,
+    }).select("_id");
+
+    const approved = visitor.status === "Approved";
+    const guardMessage = approved
+      ? visitor.visitorName + " ko flat " + visitor.flatNumber +
+        " ne approve kar diya. Allowed: " + visitor.allowedDurationMins +
+        " min. Access de sakte hain."
+      : visitor.visitorName + " ko flat " + visitor.flatNumber +
+        " ne reject kar diya." +
+        (visitor.rejectionReason ? " Reason: " + visitor.rejectionReason : "");
+
+    for (const guard of guards) {
+      await createNotification({
+        recipient: guard._id,
+        society: req.user.society,
+        title: approved ? "Entry Approved" : "Entry Rejected",
+        message: guardMessage,
+        category: "visitor",
+        type: approved ? "success" : "error",
+        link: "/daily-staff",
+      }).catch((err) =>
+        console.error("Gate response notification error:", err.message),
+      );
+    }
+
+    logActivity({
+      userId: req.user.id,
+      societyId: req.user.society,
+      action: "visitor_entry",
+      description:
+        "Gate request " + visitor.status.toLowerCase() + " for " +
+        visitor.visitorName + " at flat " + visitor.flatNumber + ".",
+      meta: {
+        visitorId: visitor._id,
+        flatNumber: visitor.flatNumber,
+        allowedDurationMins: visitor.allowedDurationMins,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: approved
+        ? "Entry approve ho gayi (" + visitor.allowedDurationMins + " min)"
+        : "Entry reject kar di gayi",
+      data: attachBaseUrl(req, visitor, ["photo"]),
+    });
+  } catch (error) {
+    console.error("Gate Response Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while responding to gate request",
+      error: error.message,
+    });
+  }
+};
+
+// ==============================
+// [POINT 3] Resident ke pending gate requests (notification card ka data)
+// ==============================
+export const myPendingApprovals = async (req, res) => {
+  try {
+    const query = {
+      society: req.user.society,
+      requestType: "gate_request",
+      status: "Pending",
+    };
+
+    if (req.user.role === "user") {
+      const me = await User.findById(req.user.id).select("unit.flatNumber");
+      if (!me || !me.unit || !me.unit.flatNumber) {
+        return res.status(400).json({
+          success: false,
+          message: "Aapke account par flat number set nahi hai",
+        });
+      }
+      query.flatNumber = me.unit.flatNumber;
+    }
+
+    const pending = await Visitor.find(query)
+      .populate("createdByGuard", "name")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      message: "Pending approvals fetched successfully",
+      totalPending: pending.length,
+      defaultDurationMins: DEFAULT_VISIT_DURATION_MINS,
+      data: attachBaseUrlToArray(req, pending, ["photo"]),
+    });
+  } catch (error) {
+    console.error("Pending Approvals Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while fetching pending approvals",
       error: error.message,
     });
   }

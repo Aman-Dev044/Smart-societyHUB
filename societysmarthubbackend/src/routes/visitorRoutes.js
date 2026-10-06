@@ -11,12 +11,17 @@ import {
   rejectVisitor,
   visitorExit,
   visitorHistory,
+  gateEntry,
+  respondToGateRequest,
+  myPendingApprovals,
 } from "../controllers/visitorController.js";
 
 import {
   createVisitorValidation,
   validationMiddleware,
 } from "../middleware/visitorValidation.js";
+
+import { uploadVisitorPhoto } from "../middleware/upload.js";
 
 // ==============================
 // MEMBER CREATE VISITOR
@@ -73,6 +78,40 @@ router.get(
   auth,
   permit("user", "society_admin", "guard"),
   visitorHistory,
+);
+
+// ==============================
+// [POINT 3] GUARD GATE ENTRY (surprise visitor / technician)
+// ==============================
+
+router.post(
+  "/gate-entry",
+  auth,
+  permit("guard", "society_admin"),
+  uploadVisitorPhoto,
+  gateEntry,
+);
+
+// ==============================
+// [POINT 3] RESIDENT APPROVE / REJECT GATE REQUEST
+// ==============================
+
+router.post(
+  "/respond",
+  auth,
+  permit("user", "society_admin"),
+  respondToGateRequest,
+);
+
+// ==============================
+// [POINT 3] RESIDENT PENDING APPROVAL CARDS
+// ==============================
+
+router.get(
+  "/pending-approvals",
+  auth,
+  permit("user", "society_admin"),
+  myPendingApprovals,
 );
 
 export default router;

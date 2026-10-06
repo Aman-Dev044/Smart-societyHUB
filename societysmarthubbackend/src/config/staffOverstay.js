@@ -14,6 +14,31 @@ export const STAFF_OVERSTAY_MAX_AGE_HOURS =
 export const STAFF_OVERSTAY_MAX_AGE_MS =
   STAFF_OVERSTAY_MAX_AGE_HOURS * 60 * 60 * 1000;
 
+// [POINT 3] Gate visitor / technician ko resident kitni der ke liye access de.
+// Resident approve karte waqt choose karta hai; na chune to ye standard time.
+export const DEFAULT_VISIT_DURATION_MINS =
+  Number(process.env.DEFAULT_VISIT_DURATION_MINS) || 120;
+
+// Upper bound, taaki galti se 10 din ka access na ban jaye.
+export const MAX_VISIT_DURATION_MINS =
+  Number(process.env.MAX_VISIT_DURATION_MINS) || 1440;
+
+// Ek approved visitor abhi overstay me hai ya nahi.
+export function isVisitorOverstay(visitor, now = new Date()) {
+  if (!visitor || visitor.status !== "Approved") return false;
+  if (!visitor.entryTime || visitor.exitTime) return false;
+  const mins = visitor.allowedDurationMins || DEFAULT_VISIT_DURATION_MINS;
+  return now - new Date(visitor.entryTime) > mins * 60 * 1000;
+}
+
+// Visitor ko allowed time se kitne minute zyada hue (0 agar overstay nahi).
+export function minsOverstayed(visitor, now = new Date()) {
+  if (!visitor?.entryTime || visitor.exitTime) return 0;
+  const mins = visitor.allowedDurationMins || DEFAULT_VISIT_DURATION_MINS;
+  const over = (now - new Date(visitor.entryTime)) / 60000 - mins;
+  return over > 0 ? Math.round(over) : 0;
+}
+
 // Har 15 minute par pending overstay check hota hai.
 export const STAFF_OVERSTAY_CRON = process.env.STAFF_OVERSTAY_CRON || "*/15 * * * *";
 
