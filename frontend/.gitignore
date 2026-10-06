@@ -26,3 +26,9 @@ dist-ssr
 # Local env files
 .env
 .env.local
+
+# Env files (kabhi commit na ho)
+.env
+.env.local
+.env.*.local
+src/.env
