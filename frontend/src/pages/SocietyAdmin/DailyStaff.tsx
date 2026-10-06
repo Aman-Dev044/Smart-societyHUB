@@ -342,8 +342,13 @@ const DailyStaff = () => {
     if (staff.status === 'Blocked') return { label: 'Blocked', color: 'bg-destructive/10 text-destructive', icon: Ban };
     if (!staff.todayLog) return { label: 'Not In', color: 'bg-muted text-muted-foreground', icon: Clock };
     if (staff.todayLog.exitTime) return { label: 'Left Today', color: 'bg-primary/10 text-primary', icon: LogOut };
+    // Overstay: entry ke baad threshold se zyada der ho gayi, exit mark nahi hua
+    if (staff.todayLog.isOverstay) return { label: 'Overstay', color: 'bg-destructive/10 text-destructive', icon: ShieldAlert };
     return { label: 'Inside', color: 'bg-success/10 text-success', icon: LogIn };
   };
+
+  // Jo Daily staff apne allowed time se zyada der andar hain.
+  const overstayStaff = (staffData || []).filter((s: any) => s.todayLog?.isOverstay);
 
   return (
     <DashboardLayout role={userRole === 'guard' ? 'guard' : 'society-admin'}>
@@ -385,6 +390,41 @@ const DailyStaff = () => {
 
         {mainTab === 'staff' ? (
           <>
+            {/* Overstay Security Alert — staff jo allowed time se zyada andar hain */}
+            {overstayStaff.length > 0 && (
+              <div className="bg-destructive/5 border border-destructive/20 rounded-3xl p-5 space-y-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-destructive" />
+                  </div>
+                  <h3 className="text-sm font-black text-destructive uppercase tracking-wide flex items-center gap-2">
+                    <ShieldAlert size={16} /> Security Alert — {overstayStaff.length} Staff Overstaying
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
+                  {overstayStaff.map((staff: any) => (
+                    <div key={staff._id} className="flex items-center justify-between gap-3 bg-card border border-destructive/20 rounded-2xl px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-foreground truncate">{staff.staffName}</p>
+                        <p className="text-[11px] font-semibold text-muted-foreground truncate">
+                          {staff.role} · Flat {staff.flatNumber} · {staff.todayLog.hoursInside} hrs inside
+                        </p>
+                      </div>
+                      {isGuard && (
+                        <button
+                          onClick={() => handleExit(staff._id)}
+                          className="shrink-0 bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-xl px-3 py-2 text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95"
+                        >
+                          <LogOut size={13} strokeWidth={3} /> Mark Exit
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Staff Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatsCard 
@@ -656,7 +696,7 @@ const DailyStaff = () => {
                       </thead>
                       <tbody className="divide-y divide-border">
                         {staffData && staffData.filter(s => s.todayLog).length > 0 ? staffData.filter(s => s.todayLog).map((staff) => (
-                          <tr key={staff._id} className="hover:bg-muted/50 transition-colors group">
+                          <tr key={staff._id} className={`transition-colors group ${staff.todayLog!.isOverstay ? 'bg-destructive/5 hover:bg-destructive/10' : 'hover:bg-muted/50'}`}>
                             <td className="py-4 px-4">
                               <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs uppercase overflow-hidden border border-border">
@@ -687,13 +727,19 @@ const DailyStaff = () => {
                                   {new Date(staff.todayLog!.exitTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </span>
                               ) : (
-                                <span className="text-[10px] font-bold text-success bg-success/10 px-2 py-0.5 rounded-full uppercase">Inside</span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${staff.todayLog!.isOverstay ? 'text-destructive bg-destructive/10' : 'text-success bg-success/10'}`}>Inside</span>
                               )}
                             </td>
                             <td className="py-4 px-4">
-                               <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg ${staff.todayLog!.exitTime ? 'bg-muted text-muted-foreground' : 'bg-success/10 text-success'}`}>
-                                 {staff.todayLog!.exitTime ? 'Completed' : 'Working'}
-                               </span>
+                               {staff.todayLog!.isOverstay ? (
+                                 <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg bg-destructive/10 text-destructive inline-flex items-center gap-1.5" title={`${staff.todayLog!.hoursInside} hrs inside, exit not marked`}>
+                                   <ShieldAlert size={11} strokeWidth={3} /> Overstay {staff.todayLog!.hoursInside}h
+                                 </span>
+                               ) : (
+                                 <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg ${staff.todayLog!.exitTime ? 'bg-muted text-muted-foreground' : 'bg-success/10 text-success'}`}>
+                                   {staff.todayLog!.exitTime ? 'Completed' : 'Working'}
+                                 </span>
+                               )}
                             </td>
                           </tr>
                         )) : (

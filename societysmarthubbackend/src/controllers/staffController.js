@@ -2,6 +2,25 @@ import Staff from "../models/Staff.js";
 import StaffAttendance from "../models/StaffAttendance.js";
 import mongoose from "mongoose";
 import { attachBaseUrl, attachBaseUrlToArray } from "../utils/addBaseUrl.js";
+import {
+  STAFF_OVERSTAY_HOURS,
+  hoursInside,
+  isOverstay,
+  isDailyStaff,
+} from "../config/staffOverstay.js";
+
+// Attendance record par overstay info chipkao, taaki guard ki list me
+// cron ka wait kiye bina hi red badge dikh sake.
+const withOverstay = (staff, attendance, now) => {
+  if (!attendance) return null;
+  return {
+    ...attendance,
+    isOverstay: isDailyStaff(staff) && isOverstay(attendance, now),
+    hoursInside: attendance.exitTime
+      ? null
+      : hoursInside(attendance.entryTime, now),
+  };
+};
 
 export const createStaff = async (req, res) => {
   try {
@@ -188,6 +207,8 @@ export const searchStaff = async (req, res) => {
       date: today,
     }).lean();
 
+    const now = new Date();
+
     const updatedStaff = staffList.map((staff) => {
       const attendance = todayAttendance.find(
         (item) => item.staff.toString() === staff._id.toString(),
@@ -195,7 +216,7 @@ export const searchStaff = async (req, res) => {
 
       return {
         ...staff,
-        todayLog: attendance || null,
+        todayLog: withOverstay(staff, attendance, now),
       };
     });
 
@@ -203,6 +224,7 @@ export const searchStaff = async (req, res) => {
       success: true,
       message: "Staff searched successfully",
       totalStaff: updatedStaff.length,
+      overstayHours: STAFF_OVERSTAY_HOURS,
       data: attachBaseUrlToArray(req, updatedStaff, ["photo"]),
     });
   } catch (error) {
@@ -375,6 +397,8 @@ export const staffLogs = async (req, res) => {
       date: today,
     }).lean();
 
+    const now = new Date();
+
     const updatedLogs = staffList.map((staff) => {
       const attendance = attendanceList.find(
         (item) => item.staff.toString() === staff._id.toString(),
@@ -382,7 +406,7 @@ export const staffLogs = async (req, res) => {
 
       return {
         ...staff,
-        todayLog: attendance || null,
+        todayLog: withOverstay(staff, attendance, now),
       };
     });
 
@@ -390,6 +414,7 @@ export const staffLogs = async (req, res) => {
       success: true,
       message: "Staff logs fetched successfully",
       totalLogs: updatedLogs.length,
+      overstayHours: STAFF_OVERSTAY_HOURS,
       data: attachBaseUrlToArray(req, updatedLogs, ["photo"]),
     });
   } catch (error) {
