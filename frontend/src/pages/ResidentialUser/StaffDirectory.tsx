@@ -221,7 +221,7 @@ const StaffDirectory: React.FC = () => {
                       <div className="w-7 h-7 bg-muted rounded-lg flex items-center justify-center">
                         <MapPin size={14} />
                       </div>
-                      <span className="text-xs font-bold">Flat: {staff.flatNumber}</span>
+                      <span className="text-xs font-bold">Flat: {staff.flatNumbers?.length ? staff.flatNumbers.join(", ") : (staff.flatNumber || "N/A")}</span>
                     </div>
                   </div>
 

@@ -60,7 +60,7 @@ export async function runStaffOverstayCheck() {
   })
     .populate({
       path: "staff",
-      select: "staffName role flatNumber staffType status",
+      select: "staffName role flatNumber flatNumbers staffType status",
     })
     .limit(500);
 
@@ -92,7 +92,7 @@ export async function runStaffOverstayCheck() {
     const message =
       `${staff.staffName} (${staff.role}) ne ${entryLabel} par entry ki thi aur ` +
       `${insideFor} hrs se society ke andar hai. Exit abhi tak mark nahi hua. ` +
-      `Flat: ${staff.flatNumber}.`;
+      `Flat: ${staff.flatNumbers?.length ? staff.flatNumbers.join(", ") : staff.flatNumber}.`;
 
     for (const guard of guards) {
       await createNotification({

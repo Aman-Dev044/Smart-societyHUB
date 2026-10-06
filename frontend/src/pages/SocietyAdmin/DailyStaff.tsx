@@ -104,7 +104,7 @@ const DailyStaff = () => {
     staffName: "",
     mobileNumber: "",
     role: [],
-    flatNumber: "",
+    flatNumbers: [],
     vehicleNumber: "",
     photo: null,
     aadharCard: null,
@@ -128,6 +128,32 @@ const DailyStaff = () => {
     photo: null,
   });
   const [gateSubmitting, setGateSubmitting] = useState(false);
+
+  // Staff ek se zyada flats me kaam kar sakta hai - chip input ka draft text
+  const [flatDraft, setFlatDraft] = useState("");
+
+  const addFlat = () => {
+    const flat = flatDraft.trim();
+    if (!flat) return;
+    const already = newStaff.flatNumbers.some(
+      (f: string) => f.toLowerCase() === flat.toLowerCase()
+    );
+    if (already) return setFlatDraft("");
+    setNewStaff({ ...newStaff, flatNumbers: [...newStaff.flatNumbers, flat] });
+    setFlatDraft("");
+  };
+
+  const removeFlat = (flat: string) =>
+    setNewStaff({
+      ...newStaff,
+      flatNumbers: newStaff.flatNumbers.filter((f: string) => f !== flat),
+    });
+
+  // Staff ke flats display ke liye. Purane records me sirf flatNumber hota hai.
+  const flatsLabel = (staff: any) => {
+    if (staff?.flatNumbers?.length) return staff.flatNumbers.join(", ");
+    return staff?.flatNumber || "N/A";
+  };
 
   const [newDelivery, setNewDelivery] = useState({
     deliveryBoyName: "",
@@ -200,7 +226,8 @@ const DailyStaff = () => {
     if (isSuccess) {
       if (showAddModal) {
         setShowAddModal(false);
-        setNewStaff({ staffName: "", mobileNumber: "", role: [], flatNumber: "", vehicleNumber: "", photo: null, aadharCard: null, policeVerification: null });
+        setNewStaff({ staffName: "", mobileNumber: "", role: [], flatNumbers: [], vehicleNumber: "", photo: null, aadharCard: null, policeVerification: null });
+        setFlatDraft("");
       }
       if (showOneTimeModal) {
         setShowOneTimeModal(false);
@@ -229,12 +256,13 @@ const DailyStaff = () => {
   const handleCreateStaff = (e: React.FormEvent) => {
     e.preventDefault();
     if (newStaff.role.length === 0) return toast.error("Please select at least one role");
+    if (newStaff.flatNumbers.length === 0) return toast.error("Kam se kam ek flat add karein");
     
     const formData = new FormData();
     formData.append("staffName", newStaff.staffName);
     formData.append("mobileNumber", newStaff.mobileNumber);
     formData.append("role", newStaff.role.join(", "));
-    formData.append("flatNumber", newStaff.flatNumber);
+    formData.append("flatNumbers", JSON.stringify(newStaff.flatNumbers));
     formData.append("vehicleNumber", newStaff.vehicleNumber);
     if (newStaff.photo) formData.append("photo", newStaff.photo);
     if (newStaff.aadharCard) formData.append("aadharCard", newStaff.aadharCard);
@@ -458,7 +486,7 @@ const DailyStaff = () => {
                       <div className="min-w-0">
                         <p className="text-sm font-bold text-foreground truncate">{staff.staffName}</p>
                         <p className="text-[11px] font-semibold text-muted-foreground truncate">
-                          {staff.role} · Flat {staff.flatNumber} · {staff.todayLog.hoursInside} hrs inside
+                          {staff.role} · Flat {flatsLabel(staff)} · {staff.todayLog.hoursInside} hrs inside
                         </p>
                       </div>
                       {isGuard && (
@@ -652,7 +680,7 @@ const DailyStaff = () => {
                               </div>
                               <div className="flex items-center gap-2.5 text-muted-foreground">
                                 <MapPin size={14} />
-                                <span className="text-xs font-semibold">Flat: {staff.flatNumber}</span>
+                                <span className="text-xs font-semibold">Flat: {flatsLabel(staff)}</span>
                               </div>
                             </div>
 
@@ -1486,7 +1514,7 @@ const DailyStaff = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-foreground text-lg">{showHistoryModal.staffName}</h3>
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">{showHistoryModal.role} • {showHistoryModal.flatNumber}</p>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">{showHistoryModal.role} • {flatsLabel(showHistoryModal)}</p>
                 </div>
               </div>
               <button onClick={() => setShowHistoryModal(null)} className="p-2 hover:bg-card rounded-xl text-muted-foreground transition-colors border border-transparent hover:border-border">
@@ -1685,15 +1713,40 @@ const DailyStaff = () => {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Flat Number</label>
-                    <input 
-                      type="text" 
-                      required
-                      placeholder="e.g. C-302" 
-                      className={inputCls} 
-                      value={newStaff.flatNumber}
-                      onChange={(e) => setNewStaff({...newStaff, flatNumber: e.target.value})}
-                    />
+                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
+                      Flats <span className="text-muted-foreground/60 normal-case tracking-normal font-bold">(kitne flats me kaam karta hai)</span>
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. C-302"
+                        className={inputCls}
+                        value={flatDraft}
+                        onChange={(e) => setFlatDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addFlat(); }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={addFlat}
+                        className="shrink-0 bg-muted hover:bg-primary/10 hover:text-primary border border-border text-muted-foreground px-3 rounded-xl text-xs font-bold transition-all"
+                      >
+                        <Plus size={14} strokeWidth={3} />
+                      </button>
+                    </div>
+                    {newStaff.flatNumbers.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {newStaff.flatNumbers.map((flat: string) => (
+                          <span key={flat} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-[11px] font-bold px-2 py-1 rounded-lg border border-primary/20">
+                            {flat}
+                            <button type="button" onClick={() => removeFlat(flat)} className="hover:text-destructive transition-colors">
+                              <X size={11} strokeWidth={3} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 

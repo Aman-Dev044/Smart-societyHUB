@@ -2,12 +2,27 @@ import Staff from "../models/Staff.js";
 import StaffAttendance from "../models/StaffAttendance.js";
 import mongoose from "mongoose";
 import { attachBaseUrl, attachBaseUrlToArray } from "../utils/addBaseUrl.js";
+import { flatsFromBody, normalizeFlatNumbers } from "../utils/flatNumbers.js";
 import {
   STAFF_OVERSTAY_HOURS,
   hoursInside,
   isOverstay,
   isDailyStaff,
 } from "../config/staffOverstay.js";
+
+// Purane staff records me flatNumbers field hai hi nahi (ye field baad me add
+// hui). .lean() par Mongoose ka default [] bhi nahi lagta, isliye yahan legacy
+// flatNumber se array bana dete hain - frontend ko hamesha array hi milta hai.
+const withFlats = (staff) => {
+  if (staff.flatNumbers?.length) return staff;
+
+  const legacy = (staff.flatNumber || "")
+    .split(",")
+    .map((f) => f.trim())
+    .filter((f) => f && f !== "N/A");
+
+  return { ...staff, flatNumbers: legacy };
+};
 
 // Attendance record par overstay info chipkao, taaki guard ki list me
 // cron ka wait kiye bina hi red badge dikh sake.
@@ -65,12 +80,16 @@ export const createStaff = async (req, res) => {
       }
     }
 
+    // Ek se zyada flats support karte hain; flatNumber display mirror hai.
+    const flatNumbers = flatsFromBody(req.body);
+
     const newStaff = await Staff.create({
       society: req.user.society,
       staffName,
       mobileNumber,
       role,
-      flatNumber,
+      flatNumbers,
+      flatNumber: flatNumbers.join(", "),
       vehicleNumber,
       photo: photoUrl || photo, // Use uploaded photo URL or provided photo string
       guardId,
@@ -130,6 +149,7 @@ export const oneTimeStaffEntry = async (req, res) => {
         staffType: "One-time",
         photo: photoUrl,
         role: "One-time Visitor",
+        flatNumbers: [],
         flatNumber: "N/A",
       });
     } else if (photoUrl) {
@@ -215,7 +235,7 @@ export const searchStaff = async (req, res) => {
       );
 
       return {
-        ...staff,
+        ...withFlats(staff),
         todayLog: withOverstay(staff, attendance, now),
       };
     });
@@ -405,7 +425,7 @@ export const staffLogs = async (req, res) => {
       );
 
       return {
-        ...staff,
+        ...withFlats(staff),
         todayLog: withOverstay(staff, attendance, now),
       };
     });
@@ -442,7 +462,7 @@ export const getStaffAttendanceHistory = async (req, res) => {
       staff: staffId,
       society: req.user.society,
     })
-      .populate("staff", "staffName role flatNumber photo")
+      .populate("staff", "staffName role flatNumber flatNumbers photo")
       .sort({
         createdAt: -1,
       });
@@ -679,3 +699,52 @@ export const verifyStaff = async (req, res) => {
   }
 };
 
+
+// ==============================
+// UPDATE STAFF FLATS
+// Staff naye flats me kaam shuru kar de ya chhod de to list yahan se badlti hai.
+// ==============================
+export const updateStaffFlats = async (req, res) => {
+  try {
+    const { staffId } = req.params;
+
+    const flatNumbers = normalizeFlatNumbers(
+      req.body.flatNumbers ?? req.body.flatNumber,
+    );
+
+    if (flatNumbers.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Kam se kam ek flat number zaroori hai",
+      });
+    }
+
+    const staff = await Staff.findOne({
+      _id: staffId,
+      society: req.user.society,
+    });
+
+    if (!staff) {
+      return res.status(404).json({
+        success: false,
+        message: "Staff not found",
+      });
+    }
+
+    staff.flatNumbers = flatNumbers;
+    await staff.save(); // pre-save hook flatNumber mirror update kar dega
+
+    return res.status(200).json({
+      success: true,
+      message: "Staff flats updated successfully",
+      data: attachBaseUrl(req, staff, ["photo"]),
+    });
+  } catch (error) {
+    console.error("Update Staff Flats Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while updating staff flats",
+      error: error.message,
+    });
+  }
+};

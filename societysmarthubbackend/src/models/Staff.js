@@ -20,6 +20,14 @@ const staffSchema = new mongoose.Schema(
       default: "Other",
     },
 
+    // Staff kitne flats me kaam karta hai - yahi asli list hai.
+    flatNumbers: {
+      type: [String],
+      default: [],
+    },
+
+    // Legacy display field. Ab ye flatNumbers se apne aap ban jata hai
+    // ("A-101, B-202"), taaki purana data aur purani screens chalti rahein.
     flatNumber: {
       type: String,
       trim: true,
@@ -125,7 +133,17 @@ const staffSchema = new mongoose.Schema(
   },
 );
 
+// Resident apne flat ka staff dhoondh sake.
+staffSchema.index({ society: 1, flatNumbers: 1 });
 staffSchema.index({ society: 1, mobileNumber: 1 });
+
+// flatNumbers badle to display wala flatNumber bhi sync kar do.
+staffSchema.pre("save", function (next) {
+  if (this.isModified("flatNumbers") && this.flatNumbers?.length) {
+    this.flatNumber = this.flatNumbers.join(", ");
+  }
+  next();
+});
 
 const Staff = mongoose.model("Staff", staffSchema);
 

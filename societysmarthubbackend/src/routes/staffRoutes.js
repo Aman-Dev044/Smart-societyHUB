@@ -17,6 +17,7 @@ import {
   blockedStaffList,
   getStaffAttendanceHistory,
   verifyStaff, // [MODULE-C]: Added verification controller
+  updateStaffFlats,
   } from "../controllers/staffController.js";
 
   import {
@@ -132,6 +133,17 @@ router.get(
   auth,
   permit("society_admin", "guard"),
   blockedStaffList,
+);
+
+// ==============================
+// UPDATE STAFF FLATS (kaunse flats me kaam karta hai)
+// ==============================
+
+router.patch(
+  "/:staffId/flats",
+  auth,
+  permit("society_admin", "guard"),
+  updateStaffFlats,
 );
 
 router.get("/attendance-history/:staffId", auth, getStaffAttendanceHistory);
