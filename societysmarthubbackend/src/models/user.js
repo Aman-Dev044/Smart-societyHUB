@@ -126,6 +126,14 @@ const UserSchema = new Schema(
       theme: { type: String, enum: ["light", "dark", "system"], default: "light" },
     },
 
+    // FCM device tokens — ek user ke multiple device ho sakte hain (phone +
+    // laptop browser), push sabhi par jata hai. Dead tokens (app uninstall,
+    // browser data clear) pushService response se detect karke khud hata deta hai.
+    fcmTokens: {
+      type: [String],
+      default: [],
+    },
+
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date },
 
@@ -155,6 +163,9 @@ UserSchema.index({ phone: 1 });
 UserSchema.index({ society: 1, role: 1 });
 UserSchema.index({ society: 1, "unit.flatNumber": 1, "unit.towerBlock": 1 });
 UserSchema.index({ "kyc.panNumber": 1 }, { sparse: true });
+
+// Dead FCM token prune karte waqt token se user dhoondhna padta hai.
+UserSchema.index({ fcmTokens: 1 }, { sparse: true });
 
 UserSchema.index({ role: 1, society: 1 });
 

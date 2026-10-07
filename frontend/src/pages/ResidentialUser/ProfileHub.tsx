@@ -28,12 +28,14 @@ import { AppDispatch, RootState } from '@/store/store';
 import { useDispatch, useSelector } from 'react-redux';
 import { changeMyPassword, getMyProfile, updateMyProfile } from '@/features/User/userSlice';
 import { toast } from '@/hooks/use-toast';
+import { useLogout } from '@/hooks/useLogout';
 
 
 const ProfileHub = () => {
 
-  const [currentView, setCurrentView] = useState('hub'); 
+  const [currentView, setCurrentView] = useState('hub');
   const dispatch = useDispatch<AppDispatch>();
+  const handleLogout = useLogout();
 
   const { profileData, loading } = useSelector((state: RootState) => state.user);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -371,7 +373,11 @@ const handlePasswordSubmit = async (e: React.FormEvent) => {
               </div>
 
               <div className="pt-10 pb-4">
-                <button className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-[#FEF2F2] border border-[#FEE2E2] text-[#DC2626] font-black hover:bg-red-100 transition-colors">
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-[#FEF2F2] border border-[#FEE2E2] text-[#DC2626] font-black hover:bg-red-100 transition-colors"
+                >
                   <LogOut size={18} />
                   <span>Logout</span>
                 </button>

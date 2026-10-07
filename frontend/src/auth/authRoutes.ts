@@ -132,5 +132,9 @@ export const AUTHROUTES = {
     NOTIFICATION_MARK_READ: "/notifications", // Base for /:id/read
     NOTIFICATION_MARK_ALL_READ: "/notifications/read-all",
     NOTIFICATION_BROADCAST: "/notifications/broadcast",
+
+    // FCM PUSH ROUTES
+    NOTIFICATION_FCM_TOKEN: "/notifications/fcm-token", // POST register / DELETE unregister
+    NOTIFICATION_PUSH_STATUS: "/notifications/push-status", // admin only, debugging
 }
  

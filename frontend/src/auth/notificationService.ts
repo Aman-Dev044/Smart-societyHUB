@@ -40,6 +40,23 @@ const getSocietyResidents = async (societyId: string) => {
   return response.data;
 };
 
+// --- FCM push ---
+
+// Login ke baad device token backend ko bhejo. Backend $addToSet use karta
+// hai, isliye dobara bhejna safe hai.
+const registerFcmToken = async (token: string) => {
+  const response = await axiosInstance.post(AUTHROUTES.NOTIFICATION_FCM_TOKEN, { token });
+  return response.data;
+};
+
+// Logout par token hatao, warna logged-out device par push aate rahenge.
+const unregisterFcmToken = async (token: string) => {
+  const response = await axiosInstance.delete(AUTHROUTES.NOTIFICATION_FCM_TOKEN, {
+    data: { token },
+  });
+  return response.data;
+};
+
 const notificationService = {
   getMyNotifications,
   getUnreadCount,
@@ -48,6 +65,8 @@ const notificationService = {
   markAllAsRead,
   broadcastManual,
   getSocietyResidents,
+  registerFcmToken,
+  unregisterFcmToken,
 };
 
 export default notificationService;

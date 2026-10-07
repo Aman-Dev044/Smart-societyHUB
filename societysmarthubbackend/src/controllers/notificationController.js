@@ -1,8 +1,34 @@
 import mongoose from "mongoose";
 import Notification from "../models/Notification.js";
 import User from "../models/user.js";
+import { sendPushToUsers } from "../services/pushService.js";
+import { getPushStatus } from "../config/firebase.js";
 
-// Create a new notification 
+/**
+ * [FCM] Push ko fire-and-forget bhejte hain.
+ *
+ * DB row pehle hi ban chuki hoti hai aur wahi source of truth hai, isliye
+ * FCM ka round-trip API response ko slow nahi karna chahiye — guard gate par
+ * form submit kare to usko turant response milna chahiye, Firebase ka wait
+ * nahi. Error sirf log hota hai, caller tak nahi jata.
+ */
+function firePush(userIds, { title, message, category, type, link, notificationId }) {
+  const targets = (userIds || []).filter(Boolean);
+  if (targets.length === 0) return;
+
+  sendPushToUsers(targets, {
+    title,
+    body: message,
+    link,
+    data: {
+      category: category || "general",
+      type: type || "info",
+      notificationId,
+    },
+  }).catch((err) => console.error("[fcm] push dispatch failed:", err.message));
+}
+
+// Create a new notification
 export const createNotification = async (data) => {
   try {
     const {
@@ -78,7 +104,16 @@ export const createNotification = async (data) => {
       });
 
       if (notifications.length > 0) {
-        return await Notification.insertMany(notifications);
+        const created = await Notification.insertMany(notifications);
+
+        // [FCM] Sender ko apni hi broadcast ka push nahi bhejte (uske liye
+        // notification already isRead: true hoti hai).
+        firePush(
+          userIds.filter((id) => !sender || id.toString() !== sender.toString()),
+          { title, message, category, type, link },
+        );
+
+        return created;
       }
       return [];
     }
@@ -98,6 +133,20 @@ export const createNotification = async (data) => {
       link,
       isRead: isSelfSingle ? true : finalIsRead
     });
+
+    // [FCM] Yahi wo jagah hai jahan se resident ke phone par push jata hai —
+    // gate entry request, visitor approval, overstay alert, notice, complaint,
+    // sab isi function se guzarte hain.
+    if (!isSelfSingle) {
+      firePush([recipient], {
+        title,
+        message,
+        category,
+        type,
+        link,
+        notificationId: newNotification._id,
+      });
+    }
 
     return newNotification;
   } catch (error) {
@@ -340,6 +389,83 @@ export const broadcastManual = async (req, res, next) => {
       status: "success",
       message: targetAudience === "specific" ? "Notification sent to member" : "Broadcast notification sent successfully",
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ==============================
+// [FCM] DEVICE TOKEN MANAGEMENT
+// ==============================
+
+// POST - Device token register karo.
+// Frontend login ke baad aur token refresh hone par ye call karta hai.
+export const registerFcmToken = async (req, res, next) => {
+  try {
+    const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+
+    if (token.length < 20) {
+      return res.status(400).json({
+        status: "error",
+        message: "Valid FCM token required",
+      });
+    }
+
+    // Ek token ek hi user ka hona chahiye. Same browser/phone par guard logout
+    // karke resident login kare, to token purane user ke doc me reh jata hai
+    // aur usko dusre ke push milne lagte hain. Isliye pehle baaki sabse hatao.
+    await User.updateMany(
+      { _id: { $ne: req.user.id }, fcmTokens: token },
+      { $pull: { fcmTokens: token } },
+    );
+
+    // $addToSet duplicate token add nahi karta.
+    await User.updateOne(
+      { _id: req.user.id },
+      { $addToSet: { fcmTokens: token } },
+    );
+
+    res.json({
+      status: "success",
+      message: "Device registered for push notifications",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// DELETE - Logout par device token hata do, warna logged-out device par
+// bhi push aate rahenge.
+export const unregisterFcmToken = async (req, res, next) => {
+  try {
+    const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+
+    if (!token) {
+      return res.status(400).json({
+        status: "error",
+        message: "FCM token required",
+      });
+    }
+
+    await User.updateOne(
+      { _id: req.user.id },
+      { $pull: { fcmTokens: token } },
+    );
+
+    res.json({
+      status: "success",
+      message: "Device unregistered",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET - Push setup live hai ya nahi (live server par debugging ke liye).
+// Credentials kabhi expose nahi karta, sirf enabled flag + reason.
+export const pushStatus = async (req, res, next) => {
+  try {
+    res.json({ status: "success", push: getPushStatus() });
   } catch (error) {
     next(error);
   }

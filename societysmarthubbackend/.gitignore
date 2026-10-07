@@ -41,3 +41,8 @@ temp/
 
 # Uploaded files
 uploads/
+
+# Firebase service account (NEVER commit - full admin access to the project)
+serviceAccountKey.json
+*serviceAccount*.json
+*-adminsdk-*.json

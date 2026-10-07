@@ -7,12 +7,12 @@ import {
   Home, UserCheck, HardHat, ShieldCheck, Wrench, AlertOctagon, LucideFileText, Ticket
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "@/hooks/use-toast";
 import { useDispatch } from "react-redux";
-import authService from "@/auth/authServices";
 import { ModeToggle } from "../mode-toggle";
 import { useAppDispatch, useAppSelector } from "@/store/store"; // [NEW] Import hooks
 import { fetchUnreadCount } from "@/features/notificationSlice"; // [NEW] Import fetchUnreadCount
+import { usePushNotifications } from "@/hooks/usePushNotifications"; // [FCM] Push register + foreground toasts
+import { useLogout } from "@/hooks/useLogout"; // Shared logout (push cleanup + session clear)
  
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -116,6 +116,10 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
     dispatch(fetchUnreadCount()); // [NEW] Fetch unread count on mount
   }, [dispatch]);
 
+  // [FCM] Ye layout har logged-in page ko wrap karti hai, isliye push setup
+  // yahan ek jagah hota hai — har role, har page ke liye.
+  usePushNotifications();
+
   const rawRole = (role || "guard").toLowerCase();
   
   // Role Normalization Logic
@@ -133,18 +137,9 @@ export function DashboardLayout({ children, role }: DashboardLayoutProps) {
   const isMember = resolvedRole === "member";
   const isSocietyOrResidential = isSocietyAdmin || isResidentialAdmin;
  
-  const handleLogout = async () => {
-    try {
-      await authService.logout();
-      toast({ title: "Logged Out", description: "You have been successfully logged out." });
-      navigate("/login", { replace: true });
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      localStorage.removeItem("role");
-    } catch (error) {
-      toast({ title: "Logout Failed", description: "Something went wrong.", variant: "destructive" });
-    }
-  };
+  // Logout ka pura logic useLogout me hai (push token cleanup + session clear),
+  // taaki ProfileHub aur yahan ek hi behaviour rahe.
+  const handleLogout = useLogout();
 
   return (
     <div className="min-h-screen bg-muted/30">
