@@ -484,12 +484,43 @@ export const submitComplaintService = async(payload: any): Promise<any>=>{
     });
     return response.data;
     };
-// oneTimeStaffEntryService
+// [ONE-TIME] Guard gate par entry request banata hai.
+// Zaroori: flatNumber, purpose, photo. Optional: description, staffName.
+// Ye seedha entry nahi lagata - resident ke approve karne par lagti hai.
     export const oneTimeStaffEntryService = async (payload: any): Promise<any> => {
     const isFormData = payload instanceof FormData;
     const response = await axiosInstance.post(AUTHROUTES.STAFF_ONE_TIME_ENTRY, payload, {
       headers: isFormData ? { "Content-Type": "multipart/form-data" } : { "Content-Type": "application/json" },
     });
+    return response.data;
+    };
+
+// [ONE-TIME] Resident approve / reject karta hai. Approve par attendance lagti hai.
+    export const respondToOneTimeStaffService = async (payload: {
+      staffId: string;
+      action: "approve" | "reject";
+      rejectionReason?: string;
+    }): Promise<any> => {
+    const response = await axiosInstance.post(AUTHROUTES.STAFF_ONE_TIME_RESPOND, payload);
+    return response.data;
+    };
+
+// [ONE-TIME] Guard ka alag tab - sirf One-time wale.
+// filters: status (Pending|Approved|Rejected), inside ("true"), flat, page, limit
+    export const getOneTimeStaffListService = async (params?: {
+      status?: string;
+      inside?: string;
+      flat?: string;
+      page?: number;
+      limit?: number;
+    }): Promise<any> => {
+    const response = await axiosInstance.get(AUTHROUTES.STAFF_ONE_TIME_LIST, { params });
+    return response.data;
+    };
+
+// [ONE-TIME] Resident ke pending approval cards.
+    export const getMyPendingOneTimeStaffService = async (): Promise<any> => {
+    const response = await axiosInstance.get(AUTHROUTES.STAFF_ONE_TIME_PENDING);
     return response.data;
     };
 // blockStaffService

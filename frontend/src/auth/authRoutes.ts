@@ -94,8 +94,15 @@ export const AUTHROUTES = {
     STAFF_SEARCH: "/staff/search",
     STAFF_DIRECTORY: "/staff/directory",
     STAFF_ATTENDANCE_HISTORY: "/staff/attendance-history",
-    STAFF_ONE_TIME_ENTRY: "/staff/one-time-entry",
     STAFF_VERIFY: "/staff/verify-member", // [MODULE-C]: Staff verification route
+
+    // ONE-TIME (TECHNICIAN) GATE FLOW
+    // Guard entry request banata hai -> resident ko push -> approve hone par
+    // attendance lagti hai -> guard exit mark karta hai (STAFF_EXIT se).
+    STAFF_ONE_TIME_ENTRY: "/staff/one-time/entry",
+    STAFF_ONE_TIME_RESPOND: "/staff/one-time/respond",
+    STAFF_ONE_TIME_LIST: "/staff/one-time/list",
+    STAFF_ONE_TIME_PENDING: "/staff/one-time/pending-approvals",
 
     // DELIVERY ROUTES
     DELIVERY_CREATE: "/delivery/create",

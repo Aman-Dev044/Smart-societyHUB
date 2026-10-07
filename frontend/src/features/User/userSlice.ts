@@ -17,6 +17,8 @@ import {
   getVisitorHistoryService,
   getPendingApprovalsService,
   respondToGateRequestService,
+  getMyPendingOneTimeStaffService,
+  respondToOneTimeStaffService,
   addStaffRatingService,
   getStaffReviewsService,
   getStaffDirectoryService,
@@ -52,6 +54,11 @@ interface UserState {
   pendingApprovalsLoading: boolean;
   respondingTo: string | null;
   defaultDurationMins: number;
+  // [ONE-TIME] Guard ke bheje hue technician/delivery requests (Staff collection).
+  // Visitor wale cards se alag rakhe hain - endpoint aur flow dono alag hain.
+  pendingOneTimeStaff: any[];
+  pendingOneTimeLoading: boolean;
+  respondingToOneTime: string | null;
   // [MODULE-D]: Rating State
   staffReviews: any[];
   ratingLoading: boolean;
@@ -86,6 +93,9 @@ const initialState: UserState = {
   pendingApprovals: [],
   pendingApprovalsLoading: false,
   respondingTo: null,
+  pendingOneTimeStaff: [],
+  pendingOneTimeLoading: false,
+  respondingToOneTime: null,
   defaultDurationMins: 120,
   // [MODULE-D]: Rating Initial State
   staffReviews: [],
@@ -370,6 +380,39 @@ export const respondToGateRequest = createAsyncThunk<
     } catch (error: any) {
       return rejectWithValue(
         error.response?.data?.message || "Failed to respond to gate request"
+      );
+    }
+  }
+);
+
+// [ONE-TIME] RESIDENT KE PENDING TECHNICIAN / DELIVERY REQUESTS
+export const getPendingOneTimeStaff = createAsyncThunk<any, void, { rejectValue: string }>(
+  "user/getPendingOneTimeStaff",
+  async (_, { rejectWithValue }) => {
+    try {
+      return await getMyPendingOneTimeStaffService();
+    } catch (error: any) {
+      return rejectWithValue(
+        error.response?.data?.message || "Failed to fetch pending one-time approvals"
+      );
+    }
+  }
+);
+
+// [ONE-TIME] RESIDENT APPROVE / REJECT — approve par backend attendance laga deta hai
+export const respondToOneTimeStaff = createAsyncThunk<
+  any,
+  { staffId: string; action: "approve" | "reject"; rejectionReason?: string },
+  { rejectValue: string }
+>(
+  "user/respondToOneTimeStaff",
+  async (payload, { rejectWithValue }) => {
+    try {
+      const response = await respondToOneTimeStaffService(payload);
+      return { ...response, staffId: payload.staffId };
+    } catch (error: any) {
+      return rejectWithValue(
+        error.response?.data?.message || "Failed to respond to one-time request"
       );
     }
   }
@@ -699,6 +742,36 @@ const userSlice = createSlice({
         })
         .addCase(respondToGateRequest.rejected, (state, action) => {
             state.respondingTo = null;
+            state.error = action.payload as string;
+        })
+
+        // [ONE-TIME] PENDING TECHNICIAN / DELIVERY REQUESTS
+        .addCase(getPendingOneTimeStaff.pending, (state) => {
+            state.pendingOneTimeLoading = true;
+        })
+        .addCase(getPendingOneTimeStaff.fulfilled, (state, action) => {
+            state.pendingOneTimeLoading = false;
+            state.pendingOneTimeStaff = action.payload?.data || [];
+        })
+        .addCase(getPendingOneTimeStaff.rejected, (state, action) => {
+            state.pendingOneTimeLoading = false;
+            state.error = action.payload as string;
+        })
+
+        // [ONE-TIME] RESPOND TO TECHNICIAN / DELIVERY REQUEST
+        .addCase(respondToOneTimeStaff.pending, (state, action) => {
+            state.respondingToOneTime = action.meta.arg.staffId;
+            state.error = null;
+        })
+        .addCase(respondToOneTimeStaff.fulfilled, (state, action) => {
+            state.respondingToOneTime = null;
+            // Jawab de diya, card list se hata do
+            state.pendingOneTimeStaff = state.pendingOneTimeStaff.filter(
+                (s: any) => s._id !== action.payload.staffId
+            );
+        })
+        .addCase(respondToOneTimeStaff.rejected, (state, action) => {
+            state.respondingToOneTime = null;
             state.error = action.payload as string;
         })
 

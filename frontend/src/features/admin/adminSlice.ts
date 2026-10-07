@@ -41,6 +41,7 @@ import {
   searchStaffService,
   getBlockedStaffService,
   oneTimeStaffEntryService,
+  getOneTimeStaffListService,
   createDeliveryService,
   markDeliveryExitService,
   getDeliveryLogsService,
@@ -168,7 +169,8 @@ import {
   }
   );
 
-  // ONE-TIME STAFF ENTRY THUNK
+  // [ONE-TIME] Guard gate par entry REQUEST banata hai (entry turant nahi lagti -
+  // resident ke approve karne par lagti hai).
 export const oneTimeStaffEntry = createAsyncThunk(
   "admin/oneTimeStaffEntry",
   async (staffData: any, { rejectWithValue }) => {
@@ -179,6 +181,23 @@ export const oneTimeStaffEntry = createAsyncThunk(
     }
   }
 );
+
+  // [ONE-TIME] Guard ka alag tab - sirf One-time (technician) wale
+  // Resident side ke thunks (approve/reject aur pending cards) userSlice me hain.
+export const getOneTimeStaffList = createAsyncThunk(
+  "admin/getOneTimeStaffList",
+  async (
+    params: { status?: string; inside?: string; flat?: string } | undefined,
+    { rejectWithValue },
+  ) => {
+    try {
+      return await getOneTimeStaffListService(params);
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || "Failed to fetch one-time staff");
+    }
+  }
+);
+
 
 interface Society {
   _id: string;

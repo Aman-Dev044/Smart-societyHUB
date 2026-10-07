@@ -11,13 +11,17 @@ import {
   staffEntry,
   staffExit,
   staffLogs,
-  oneTimeStaffEntry,
   blockStaff,
   unblockStaff,
   blockedStaffList,
   getStaffAttendanceHistory,
   verifyStaff, // [MODULE-C]: Added verification controller
   updateStaffFlats,
+  // [ONE-TIME] Approval-based technician / delivery gate flow
+  oneTimeEntryRequest,
+  respondToOneTimeRequest,
+  oneTimeStaffList,
+  myPendingOneTimeApprovals,
   } from "../controllers/staffController.js";
 
   import {
@@ -25,7 +29,10 @@ import {
   validationMiddleware,
   } from "../middleware/staffValidation.js";
 
-  import { uploadStaffDocuments } from "../middleware/upload.js"; // [MODULE-C]: Handle document uploads
+  import {
+  uploadStaffDocuments, // [MODULE-C]: Handle document uploads
+  uploadOneTimeStaffPhoto, // [ONE-TIME] Gate par liya gaya photo
+  } from "../middleware/upload.js";
 
   // Test route to verify router is working
   router.get("/test", (req, res) => res.json({ message: "Staff routes are accessible" }));
@@ -37,14 +44,57 @@ import {
   router.get("/directory", auth, permit("user", "society_admin", "guard"), staffLogs);
 
   // ==============================
-  // ONE-TIME STAFF ENTRY (GUARD)
+  // [ONE-TIME] TECHNICIAN / DELIVERY GATE FLOW
   // ==============================
+  //
+  // Flow: guard entry request banata hai -> resident ko push jata hai ->
+  // resident approve kare to attendance lagti hai -> guard exit mark karta hai
+  // (POST /api/staff/exit).
+  //
+  // Ye routes `/:staffId` wale param routes se PEHLE hain, taaki "one-time"
+  // kabhi staffId ki tarah match na ho.
+
+  // GUARD: gate par entry request banao (flatNumber + purpose + photo zaroori)
+  router.post(
+  "/one-time/entry",
+  auth,
+  permit("guard", "society_admin"),
+  uploadOneTimeStaffPhoto,
+  oneTimeEntryRequest,
+  );
+
+  // Purana path — mobile/web dono ek hi behaviour par rahein isliye wahi
+  // naya handler. (Pehle ye seedha attendance laga deta tha.)
   router.post(
   "/one-time-entry",
   auth,
   permit("guard", "society_admin"),
-  uploadStaffDocuments,
-  oneTimeStaffEntry,
+  uploadOneTimeStaffPhoto,
+  oneTimeEntryRequest,
+  );
+
+  // RESIDENT: approve / reject
+  router.post(
+  "/one-time/respond",
+  auth,
+  permit("user", "society_admin"),
+  respondToOneTimeRequest,
+  );
+
+  // RESIDENT: pending approval cards
+  router.get(
+  "/one-time/pending-approvals",
+  auth,
+  permit("user", "society_admin"),
+  myPendingOneTimeApprovals,
+  );
+
+  // GUARD: alag tab — sirf One-time wale, normal visitors se mix nahi
+  router.get(
+  "/one-time/list",
+  auth,
+  permit("guard", "society_admin"),
+  oneTimeStaffList,
   );
 
   // ==============================

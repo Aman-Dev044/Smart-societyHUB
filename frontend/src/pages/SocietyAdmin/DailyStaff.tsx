@@ -111,9 +111,13 @@ const DailyStaff = () => {
     policeVerification: null
   });
 
+  // [ONE-TIME] Mobile number hata diya gaya hai. Ab flat + purpose + photo
+  // zaroori hain, aur entry resident ke approve karne par lagti hai.
   const [oneTimeStaff, setOneTimeStaff] = useState<any>({
     staffName: "",
-    mobileNumber: "",
+    flatNumber: "",
+    purpose: "",
+    description: "",
     photo: null
   });
 
@@ -278,15 +282,31 @@ const DailyStaff = () => {
 
   const handleOneTimeEntry = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Photo backend par required hai, par <input type=file> ko `required`
+    // lagane se bhi browser kabhi-kabhi khaali bhej deta hai — isliye yahan
+    // bhi check, taaki guard ko server error ke bajaye saaf message mile.
+    if (!oneTimeStaff.photo) {
+      toast.error("Photo lena zaroori hai");
+      return;
+    }
+
     const formData = new FormData();
-    formData.append("staffName", oneTimeStaff.staffName);
-    formData.append("mobileNumber", oneTimeStaff.mobileNumber);
-    if (oneTimeStaff.photo) formData.append("photo", oneTimeStaff.photo);
+    formData.append("flatNumber", oneTimeStaff.flatNumber);
+    formData.append("purpose", oneTimeStaff.purpose);
+    if (oneTimeStaff.description) formData.append("description", oneTimeStaff.description);
+    if (oneTimeStaff.staffName) formData.append("staffName", oneTimeStaff.staffName);
+    formData.append("photo", oneTimeStaff.photo);
 
     dispatch(oneTimeStaffEntry(formData)).then((res: any) => {
       if (res.payload?.success) {
-        toast.success("One-time entry marked successfully");
+        // Entry turant nahi lagti — resident ke approve karne par lagti hai.
+        toast.success("Request resident ko bhej di gayi. Approval ka wait karein.");
+        setShowOneTimeModal(false);
+        setOneTimeStaff({ staffName: "", flatNumber: "", purpose: "", description: "", photo: null });
         dispatch(getStaffLogs(staffTypeFilter === 'All' ? undefined : staffTypeFilter));
+      } else {
+        toast.error(res.payload || "Entry request bhejne me dikkat aayi");
       }
     });
   };
@@ -639,14 +659,19 @@ const DailyStaff = () => {
                     {(staffData || []).length > 0 ? staffData.map((staff) => {
                       const status = getStatusInfo(staff);
                       const isOneTime = staff.staffType === "One-time";
+                      // [ONE-TIME] Naam optional hai (gate par sirf photo +
+                      // purpose liya jata hai), isliye fallback zaroori hai.
+                      const displayName = staff.staffName || staff.purpose || "One-time Visitor";
+                      // Resident ne approve kiya ya nahi — guard ko yahi dekhna hai.
+                      const approval = isOneTime ? staff.approvalStatus : null;
                       return (
                         <div key={staff._id} className={`group bg-card border ${isOneTime ? 'border-success/20 hover:border-success/40' : 'border-border hover:border-primary/40'} rounded-2xl p-5 hover:shadow-md transition-all`}>
                           <div className="flex items-start justify-between mb-4">
                             <div className={`w-12 h-12 rounded-2xl ${isOneTime ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'} flex items-center justify-center font-bold overflow-hidden border border-border`}>
                               {staff.photo ? (
-                                <img src={staff.photo} alt={staff.staffName} className="w-full h-full object-cover" />
+                                <img src={staff.photo} alt={displayName} className="w-full h-full object-cover" />
                               ) : (
-                                staff.staffName.charAt(0)
+                                displayName.charAt(0)
                               )}
                             </div>
                             <div className="flex gap-1 flex-col items-end">
@@ -654,6 +679,20 @@ const DailyStaff = () => {
                                 <status.icon size={10} />
                                 {status.label}
                               </span>
+                              {/* [ONE-TIME] Resident ke approval ka status —
+                                  iske bina guard ko pata hi nahi chalta ki
+                                  andar bhejna hai ya nahi. */}
+                              {approval && (
+                                <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md mt-1 ${
+                                  approval === "Approved"
+                                    ? "bg-success/10 text-success"
+                                    : approval === "Rejected"
+                                      ? "bg-destructive/10 text-destructive"
+                                      : "bg-warning/20 text-warning-foreground"
+                                }`}>
+                                  {approval === "Pending" ? "Awaiting Approval" : approval}
+                                </span>
+                              )}
                               {isOneTime && (
                                 <span className="bg-success/10 text-success text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md mt-1">Temporary</span>
                               )}
@@ -663,7 +702,7 @@ const DailyStaff = () => {
                           <div className="space-y-3">
                             <div>
                               <div className="flex items-center gap-1.5 leading-tight">
-                                <h4 className="font-bold text-foreground group-hover:text-primary transition-colors">{staff.staffName}</h4>
+                                <h4 className="font-bold text-foreground group-hover:text-primary transition-colors">{displayName}</h4>
                                 {staff.isVerified && (
                                   <div className="bg-primary rounded-full p-0.5" title="Verified Staff">
                                     <Check className="text-primary-foreground" size={8} strokeWidth={5} />
@@ -674,10 +713,26 @@ const DailyStaff = () => {
                             </div>
 
                             <div className="space-y-2 pt-1">
-                              <div className="flex items-center gap-2.5 text-muted-foreground">
-                                <Phone size={14} />
-                                <span className="text-xs font-semibold">{staff.mobileNumber}</span>
-                              </div>
+                              {/* [ONE-TIME] Mobile number ab liya hi nahi jata,
+                                  iski jagah purpose aur description dikhate hain. */}
+                              {isOneTime ? (
+                                <>
+                                  {staff.purpose && (
+                                    <div className="flex items-center gap-2.5 text-muted-foreground">
+                                      <Wrench size={14} />
+                                      <span className="text-xs font-semibold">{staff.purpose}</span>
+                                    </div>
+                                  )}
+                                  {staff.description && (
+                                    <p className="text-[11px] text-muted-foreground pl-[26px] leading-snug">{staff.description}</p>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="flex items-center gap-2.5 text-muted-foreground">
+                                  <Phone size={14} />
+                                  <span className="text-xs font-semibold">{staff.mobileNumber}</span>
+                                </div>
+                              )}
                               <div className="flex items-center gap-2.5 text-muted-foreground">
                                 <MapPin size={14} />
                                 <span className="text-xs font-semibold">Flat: {flatsLabel(staff)}</span>
@@ -1269,7 +1324,7 @@ const DailyStaff = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-foreground leading-none">One-time Entry</h3>
-                  <p className="text-xs text-muted-foreground mt-1">Register temporary worker entry</p>
+                  <p className="text-xs text-muted-foreground mt-1">Resident ki approval par entry lagegi</p>
                 </div>
               </div>
               <button onClick={() => setShowOneTimeModal(false)} className="p-2 hover:bg-muted/50 rounded-xl text-muted-foreground transition-colors">
@@ -1280,30 +1335,54 @@ const DailyStaff = () => {
             <form onSubmit={handleOneTimeEntry}>
               <div className="p-6 space-y-5">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Staff Name</label>
-                  <input 
-                    type="text" 
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Flat Number *</label>
+                  <input
+                    type="text"
                     required
-                    placeholder="e.g. Rahul Plumber" 
-                    className={inputCls} 
+                    placeholder="e.g. A-101"
+                    className={inputCls}
+                    value={oneTimeStaff.flatNumber}
+                    onChange={(e) => setOneTimeStaff({...oneTimeStaff, flatNumber: e.target.value})}
+                  />
+                  <p className="text-[10px] text-muted-foreground ml-1">Isi flat ke resident ko approval request jayegi</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Purpose *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. AC repair, Furniture delivery"
+                    className={inputCls}
+                    value={oneTimeStaff.purpose}
+                    onChange={(e) => setOneTimeStaff({...oneTimeStaff, purpose: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Description (Optional)</label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Bada sofa aur table laaye hain"
+                    className={inputCls}
+                    value={oneTimeStaff.description}
+                    onChange={(e) => setOneTimeStaff({...oneTimeStaff, description: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Name (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Rahul Plumber"
+                    className={inputCls}
                     value={oneTimeStaff.staffName}
                     onChange={(e) => setOneTimeStaff({...oneTimeStaff, staffName: e.target.value})}
                   />
                 </div>
+
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Mobile Number</label>
-                  <input 
-                    type="tel" 
-                    required
-                    placeholder="e.g. 9876543210" 
-                    className={inputCls} 
-                    value={oneTimeStaff.mobileNumber}
-                    onChange={(e) => setOneTimeStaff({...oneTimeStaff, mobileNumber: e.target.value})}
-                  />
-                </div>
-                
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Upload Photo (Optional)</label>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Upload Photo *</label>
                   <div className="flex items-center gap-4">
                     <input 
                       type="file" 
@@ -1324,7 +1403,7 @@ const DailyStaff = () => {
 
               <div className="p-6 bg-muted/50/80 border-t border-border flex items-center gap-3">
                 <button type="button" onClick={() => setShowOneTimeModal(false)} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-slate-600">Cancel</button>
-                <button type="submit" className="flex-2 bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-emerald-100 transition-all active:scale-95">Mark Entry</button>
+                <button type="submit" className="flex-2 bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-emerald-100 transition-all active:scale-95">Send for Approval</button>
               </div>
             </form>
           </div>

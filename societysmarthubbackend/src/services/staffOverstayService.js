@@ -6,11 +6,15 @@ import User from "../models/user.js";
 import { createNotification } from "../controllers/notificationController.js";
 import {
   STAFF_OVERSTAY_HOURS,
-  STAFF_OVERSTAY_MS,
+  ONE_TIME_OVERSTAY_HOURS,
+  MIN_OVERSTAY_MS,
   STAFF_OVERSTAY_CRON,
   STAFF_OVERSTAY_MAX_AGE_MS,
   hoursInside,
-  isDailyStaff,
+  isOneTimeStaff,
+  isOverstay,
+  overstayMsFor,
+  overstayHoursFor,
   isVisitorOverstay,
   minsOverstayed,
 } from "../config/staffOverstay.js";
@@ -36,9 +40,12 @@ async function buildGuardCache() {
 }
 
 /**
- * Un Daily staff ko dhoondho jo entry ke baad STAFF_OVERSTAY_HOURS se zyada
- * der se andar hain aur jinka exit mark nahi hua, phir us society ke har
- * guard ko ek security alert bhejo.
+ * Un staff ko dhoondho jo entry ke baad apne threshold se zyada der se andar
+ * hain aur jinka exit mark nahi hua, phir us society ke har guard ko ek
+ * security alert bhejo.
+ *
+ * Daily aur One-time (technician / delivery) dono cover hote hain, par
+ * threshold alag ho sakta hai (STAFF_OVERSTAY_HOURS vs ONE_TIME_OVERSTAY_HOURS).
  *
  * Har attendance record par alert sirf ek baar jata hai (overstayAlertedAt),
  * isliye cron ke har tick par guard ko spam nahi hota.
@@ -47,7 +54,11 @@ async function buildGuardCache() {
  */
 export async function runStaffOverstayCheck() {
   const now = new Date();
-  const cutoff = new Date(now.getTime() - STAFF_OVERSTAY_MS);
+
+  // Query ka cutoff dono thresholds me se chhota hai, warna jis type ka
+  // threshold kam hai uske records yahin chhoot jate. Exact check niche
+  // per-record hota hai.
+  const cutoff = new Date(now.getTime() - MIN_OVERSTAY_MS);
   const staleFloor = new Date(now.getTime() - STAFF_OVERSTAY_MAX_AGE_MS);
 
   // Open attendance records: entry ho chuki, exit nahi, alert abhi tak nahi bheja.
@@ -60,7 +71,8 @@ export async function runStaffOverstayCheck() {
   })
     .populate({
       path: "staff",
-      select: "staffName role flatNumber flatNumbers staffType status",
+      select:
+        "staffName role flatNumber flatNumbers staffType status purpose description",
     })
     .limit(500);
 
@@ -74,10 +86,13 @@ export async function runStaffOverstayCheck() {
   for (const record of openRecords) {
     const staff = record.staff;
 
-    // Scope abhi sirf Daily staff hai. One-time technician/visitor overstay
-    // alag flow me handle hoga. staff null ho sakta hai agar Staff doc
-    // delete ho chuka ho (orphan attendance record).
-    if (!isDailyStaff(staff)) continue;
+    // staff null ho sakta hai agar Staff doc delete ho chuka ho
+    // (orphan attendance record).
+    if (!staff) continue;
+
+    // Threshold staff type ke hisaab se alag hai, isliye DB query ke baad
+    // yahan exact check karna zaroori hai.
+    if (!isOverstay(record, now, overstayMsFor(staff))) continue;
 
     const guards = await guardsFor(record.society);
     if (guards.length === 0) continue;
@@ -89,16 +104,29 @@ export async function runStaffOverstayCheck() {
       timeZone: "Asia/Kolkata",
     });
 
-    const message =
-      `${staff.staffName} (${staff.role}) ne ${entryLabel} par entry ki thi aur ` +
-      `${insideFor} hrs se society ke andar hai. Exit abhi tak mark nahi hua. ` +
-      `Flat: ${staff.flatNumbers?.length ? staff.flatNumbers.join(", ") : staff.flatNumber}.`;
+    const flats = staff.flatNumbers?.length
+      ? staff.flatNumbers.join(", ")
+      : staff.flatNumber;
+
+    const oneTime = isOneTimeStaff(staff);
+
+    // One-time entry me naam optional hai (gate par sirf photo + purpose
+    // liya jata hai), isliye naam na ho to purpose se identify karte hain.
+    const message = oneTime
+      ? `${staff.staffName || staff.purpose} (${staff.purpose}) flat ${flats} ke liye ` +
+        `${entryLabel} par andar aaya tha aur ${insideFor} hrs se andar hai ` +
+        `(allowed ${overstayHoursFor(staff)} hrs). Exit abhi tak mark nahi hua.`
+      : `${staff.staffName} (${staff.role}) ne ${entryLabel} par entry ki thi aur ` +
+        `${insideFor} hrs se society ke andar hai. Exit abhi tak mark nahi hua. ` +
+        `Flat: ${flats}.`;
 
     for (const guard of guards) {
       await createNotification({
         recipient: guard._id,
         society: record.society,
-        title: "Security Alert: Staff Overstay",
+        title: oneTime
+          ? "Security Alert: Technician Overstay"
+          : "Security Alert: Staff Overstay",
         message,
         category: "alert",
         type: "warning",
@@ -218,6 +246,7 @@ export function startStaffOverstayCron() {
   });
 
   console.log(
-    `[overstay] cron registered (${STAFF_OVERSTAY_CRON}, threshold ${STAFF_OVERSTAY_HOURS}h)`,
+    `[overstay] cron registered (${STAFF_OVERSTAY_CRON}, daily staff ${STAFF_OVERSTAY_HOURS}h, ` +
+      `one-time ${ONE_TIME_OVERSTAY_HOURS}h)`,
   );
 }

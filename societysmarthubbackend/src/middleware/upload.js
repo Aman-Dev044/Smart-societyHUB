@@ -139,6 +139,16 @@ export const uploadVisitorPhoto = multer({
   limits: { fileSize: 5 * MB },
 }).single("photo");
 
+// [ONE-TIME] Gate par liya gaya one-time staff / technician ka photo.
+// `.fields()` use kiya hai (`.single()` nahi) taaki client galti se koi extra
+// file field bhej de to "Unexpected field" error se request fail na ho —
+// mobile aur web dono isi endpoint par aate hain.
+export const uploadOneTimeStaffPhoto = multer({
+  storage: createStorage("staff/onetime"),
+  fileFilter: imageFilter,
+  limits: { fileSize: 5 * MB },
+}).fields([{ name: "photo", maxCount: 1 }]);
+
 // Society Documents (Bylaws, Forms, Reports)
 export const uploadSocietyDocument = multer({
   storage: createStorage("documents"),

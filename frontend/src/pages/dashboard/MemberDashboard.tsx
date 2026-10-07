@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useAppDispatch, useAppSelector } from "../../store/store";
-import { createVisitor, getVisitorHistory, clearUserError, getMyProfile, getDashboardSummary, getPendingApprovals, respondToGateRequest } from "../../features/User/userSlice";
+import { createVisitor, getVisitorHistory, clearUserError, getMyProfile, getDashboardSummary, getPendingApprovals, respondToGateRequest, getPendingOneTimeStaff, respondToOneTimeStaff } from "../../features/User/userSlice";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
@@ -59,6 +59,22 @@ export default function MemberDashboard() {
   const { pendingApprovals, respondingTo, defaultDurationMins } = useAppSelector(
     (state) => state.user
   );
+
+  // [ONE-TIME] Guard ke bheje hue technician / delivery requests.
+  // Visitor cards se alag hain — inme duration nahi hota, bas Allow/Reject.
+  const { pendingOneTimeStaff, respondingToOneTime } = useAppSelector(
+    (state) => state.user
+  );
+
+  const handleOneTimeResponse = (staffId: string, action: "approve" | "reject") => {
+    dispatch(respondToOneTimeStaff({ staffId, action })).then((res: any) => {
+      if (res.meta.requestStatus === "fulfilled") {
+        toast.success(res.payload?.message || "Response bhej diya gaya");
+      } else {
+        toast.error(res.payload || "Response fail ho gaya");
+      }
+    });
+  };
   // Har card ka apna duration selection (default = backend ka standard time)
   const [durationFor, setDurationFor] = useState<Record<string, number>>({});
 
@@ -91,6 +107,15 @@ export default function MemberDashboard() {
   useEffect(() => {
     dispatch(getPendingApprovals());
     const id = setInterval(() => dispatch(getPendingApprovals()), 10000);
+    return () => clearInterval(id);
+  }, [dispatch]);
+
+  // [ONE-TIME] Technician / delivery requests bhi usi tarah poll hoti hain.
+  // Push notification already aata hai, par polling se card tab bhi dikhta hai
+  // jab resident ne notifications block kar rakhe hon.
+  useEffect(() => {
+    dispatch(getPendingOneTimeStaff());
+    const id = setInterval(() => dispatch(getPendingOneTimeStaff()), 10000);
     return () => clearInterval(id);
   }, [dispatch]);
 
@@ -249,6 +274,79 @@ export default function MemberDashboard() {
                       </Button>
                       <Button
                         onClick={() => handleGateResponse(v._id, "reject")}
+                        disabled={busy}
+                        variant="outline"
+                        className="rounded-xl h-10 font-bold text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <XCircle className="w-4 h-4 mr-1.5" /> Reject
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* [ONE-TIME] Technician / delivery requests — visitor cards se alag,
+            kyunki inme duration select nahi hota, sirf Allow / Reject hai. */}
+        {pendingOneTimeStaff && pendingOneTimeStaff.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-warning/5 border border-warning/30 rounded-2xl p-5 space-y-4"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-warning" />
+              </div>
+              <h3 className="text-sm font-black text-foreground uppercase tracking-wide flex items-center gap-2">
+                <HardHat className="w-4 h-4" />
+                Technician / Delivery Request ({pendingOneTimeStaff.length})
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {pendingOneTimeStaff.map((s: any) => {
+                const busy = respondingToOneTime === s._id;
+                const name = s.displayName || s.staffName || s.purpose;
+                return (
+                  <div key={s._id} className="bg-card border border-warning/30 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      {s.photo ? (
+                        <img src={s.photo} alt="" className="w-16 h-16 rounded-xl object-cover border border-border shrink-0" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground font-bold text-lg shrink-0">
+                          {name?.charAt(0)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-foreground truncate">{name}</p>
+                        <p className="text-xs font-semibold text-primary uppercase tracking-wide">{s.purpose}</p>
+                        <div className="mt-1.5 space-y-0.5">
+                          {s.description && (
+                            <p className="text-[11px] text-muted-foreground">{s.description}</p>
+                          )}
+                          {s.requestedByGuard?.name && (
+                            <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                              <ShieldCheck className="w-3 h-3" /> Guard: {s.requestedByGuard.name}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        onClick={() => handleOneTimeResponse(s._id, "approve")}
+                        disabled={busy}
+                        className="flex-1 rounded-xl h-10 font-bold"
+                      >
+                        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CheckCircle className="w-4 h-4 mr-1.5" /> Allow</>}
+                      </Button>
+                      <Button
+                        onClick={() => handleOneTimeResponse(s._id, "reject")}
                         disabled={busy}
                         variant="outline"
                         className="rounded-xl h-10 font-bold text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
