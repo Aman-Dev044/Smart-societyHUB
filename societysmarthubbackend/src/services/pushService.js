@@ -66,7 +66,15 @@ async function pruneDeadTokens(tokens) {
 export async function sendPushToUsers(userIds, payload) {
   const result = { sent: 0, failed: 0, skipped: true };
 
-  if (!isPushEnabled()) return result;
+  // [PUSH-DEBUG] Chain ka step 3: FCM layer tak pahuncha.
+  console.log("[BACKEND-3] sendPushToUsers start hua for IDs:", userIds);
+
+  if (!isPushEnabled()) {
+    console.log(
+      "[BACKEND-3] ERROR: isPushEnabled false hai! (Firebase credentials ka issue)",
+    );
+    return result;
+  }
 
   const ids = (Array.isArray(userIds) ? userIds : [userIds]).filter(Boolean);
   if (ids.length === 0) return result;
@@ -86,7 +94,23 @@ export async function sendPushToUsers(userIds, payload) {
     "preferences.notifications.push": { $ne: false },
   }).select("_id fcmTokens");
 
+  // [PUSH-DEBUG] DB me in users ke kitne device tokens hain. Khaali array ka
+  // matlab frontend ne token register nahi kiya (notification permission deny,
+  // ya push preference off).
+  console.log(
+    "[BACKEND-3] DB me in users ke FCM tokens mile:",
+    recipients.map((u) => ({
+      id: String(u._id),
+      tokenCount: u.fcmTokens?.length || 0,
+    })),
+  );
+
   const tokens = [...new Set(recipients.flatMap((u) => u.fcmTokens || []))];
+
+  console.log(
+    `[BACKEND-3] Total ${tokens.length} token Firebase ko bheje jayenge.`,
+  );
+
   if (tokens.length === 0) return result;
 
   result.skipped = false;
@@ -128,6 +152,21 @@ export async function sendPushToUsers(userIds, payload) {
           headers: { Urgency: "high" },
         },
       });
+
+      // [PUSH-DEBUG] Firebase ka asli jawab — yahan tak success aa gaya to
+      // backend ka kaam pura hai, aage ka masla service worker / device ka hai.
+      console.log(
+        `[BACKEND-3] Firebase response: success ${response.successCount}, failed ${response.failureCount}`,
+      );
+
+      if (response.failureCount > 0) {
+        console.log(
+          "[BACKEND-3] Firebase errors:",
+          response.responses
+            .filter((r) => !r.success)
+            .map((r) => ({ code: r.error?.code, message: r.error?.message })),
+        );
+      }
 
       result.sent += response.successCount;
       result.failed += response.failureCount;

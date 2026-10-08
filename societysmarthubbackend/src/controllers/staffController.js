@@ -169,6 +169,14 @@ export const oneTimeEntryRequest = async (req, res) => {
       isActive: true,
     }).select("_id name");
 
+    // [PUSH-DEBUG] Chain ka step 1: is flat ka koi resident mila ya nahi.
+    // 0 mile to push ka sawaal hi nahi — flatNumber mismatch hai (e.g. "A-101"
+    // vs "A101") ya resident ka unit.flatNumber set nahi hai.
+    console.log(
+      `[BACKEND-1] Flat ${flatNumber} ke liye ${residents?.length || 0} residents mile.`,
+      residents.map((r) => ({ id: String(r._id), name: r.name })),
+    );
+
     if (residents.length === 0) {
       return res.status(404).json({
         success: false,

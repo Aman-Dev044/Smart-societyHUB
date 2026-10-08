@@ -13,8 +13,15 @@ import { getPushStatus } from "../config/firebase.js";
  * nahi. Error sirf log hota hai, caller tak nahi jata.
  */
 function firePush(userIds, { title, message, category, type, link, notificationId }) {
+  // [PUSH-DEBUG] Chain ka step 2: firePush tak control aaya ya nahi, aur
+  // kaunse user ids ke saath.
+  console.log("[BACKEND-2] firePush call hua. In users ke liye:", userIds);
+
   const targets = (userIds || []).filter(Boolean);
-  if (targets.length === 0) return;
+  if (targets.length === 0) {
+    console.log("[BACKEND-2] ERROR: targets array empty hai!");
+    return;
+  }
 
   sendPushToUsers(targets, {
     title,
