@@ -24,6 +24,7 @@ async function seedSuperAdmin() {
     const superAdminData = {
       name: process.env.SUPERADMIN_NAME || "Super Admin",
       email: process.env.SUPERADMIN_EMAIL || "superadmin@example.com",
+      phone: process.env.SUPERADMIN_PHONE || "9999999999",
       password: process.env.SUPERADMIN_PASSWORD || "SuperAdmin@123"
     };
 
@@ -32,6 +33,7 @@ async function seedSuperAdmin() {
     const superAdmin = await User.create({
       name: superAdminData.name,
       email: superAdminData.email,
+      phone: superAdminData.phone,
       passwordHash,
       role: "superadmin",
       society: null,

@@ -143,11 +143,28 @@ export async function sendPushToUsers(userIds, payload) {
       // bhejne se display ka pura control service worker ke paas rehta hai
       // (frontend/public/firebase-messaging-sw.js), jo deterministic hai.
       //
-      // Aage agar native Android/iOS app banti hai, to tab `android.notification`
-      // / `apns.payload.aps` blocks yahan add karne honge.
       const response = await messaging.sendEachForMulticast({
         tokens: batch,
+        notification: {
+          title,
+          body,
+        },
         data: stringData,
+        android: {
+          priority: "high",
+          notification: {
+            sound: "default",
+            defaultSound: true,
+            defaultVibrateTimings: true,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: "default",
+            },
+          },
+        },
         webpush: {
           headers: { Urgency: "high" },
         },
